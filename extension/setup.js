@@ -1,0 +1,75 @@
+import {CONFIG} from './config.js';
+const $=id=>document.getElementById(id);
+let running=null,currentTab=null,micReady=false,helperReady=false;
+function updateStart() {
+  const button = $('start');
+  const isEpisode = currentTab?.url?.startsWith('https://www.crunchyroll.com/watch/');
+  button.classList.toggle('stop', !!running);
+  button.disabled = !running && helperReady && micReady && !isEpisode;
+  button.textContent = running ? 'Stop practice'
+    : !helperReady ? 'Check connection'
+    : !micReady ? 'Allow microphone'
+    : 'Start practice';
+}
+function error(message){$('error').textContent=message||'';$('error').hidden=!message}
+async function load(){
+  const stored=await chrome.storage.local.get(['micReady','bank','progress','lastError','showJapanese']);
+  micReady=!!stored.micReady;const bank=stored.bank||[],progress=stored.progress||{phrases:0};
+  $('mic').textContent=micReady?'Allowed':'Allow access';$('mic').classList.toggle('enabled',micReady);$('japanese-toggle').setAttribute('aria-checked',String(!!stored.showJapanese));
+  error(stored.lastError);$('words').replaceChildren();
+  if(!bank.length){const p=document.createElement('div');p.className='empty';p.textContent='Words you save during practice will appear here.';$('words').append(p)}
+  for(const word of bank){
+    const row=document.createElement('div');row.className='word';const head=document.createElement('div');const strong=document.createElement('strong');strong.textContent=word.romaji;const reading=document.createElement('span');reading.className='reading';reading.textContent=word.japanese;head.append(strong,reading);
+    const definition=document.createElement('div');definition.className='definition';definition.textContent=word.meaning;const context=document.createElement('small');context.textContent=word.context?.romaji||'';definition.append(context);const a=document.createElement('a');a.textContent='↗';a.title='Open the episode';if(word.context?.url?.startsWith('https://www.crunchyroll.com/'))a.href=word.context.url;a.target='_blank';row.append(head,definition,a);$('words').append(row)
+  }
+  $('export').hidden=!bank.length;$('progress').textContent=progress.phrases+' '+(progress.phrases===1?'line':'lines')+' practiced';
+  const current=await chrome.runtime.sendMessage({target:'worker',type:'status'});running=current?.session;
+  [currentTab]=await chrome.tabs.query({active:true,lastFocusedWindow:true});
+  const isCrunchyroll=currentTab?.url?.startsWith('https://www.crunchyroll.com/watch/');
+  $('episode-title').textContent = isCrunchyroll
+    ? (currentTab.title || 'Crunchyroll episode').replace(/ - Watch on Crunchyroll$/, '')
+    : 'Open a Crunchyroll episode';
+  try {
+    const response = await fetch(CONFIG.base + '/status', {
+      headers: { 'X-Taku-Token': CONFIG.token },
+      signal: AbortSignal.timeout(2500),
+    });
+    if (!response.ok) throw Error();
+    const { usage } = await response.json();
+    helperReady = true;
+    $('usage').textContent = '$' + usage.estimatedUSD.toFixed(2) + ' today';
+  } catch {
+    helperReady = false;
+    $('usage').textContent = '';
+  }
+  $('helper').hidden = helperReady;
+  $('helper').textContent = helperReady ? '' : 'Open Start Taku.command on your Mac, then check the connection.';
+  updateStart();
+}
+$('mic').onclick=()=>chrome.runtime.sendMessage({target:'worker',type:'permission'});
+$('start').onclick=async()=>{
+  if (!running && !helperReady) {
+    $('start').disabled = true;
+    await load();
+    return;
+  }
+  if (!running && !micReady) {
+    await chrome.runtime.sendMessage({target:'worker',type:'permission'});
+    return;
+  }
+  $('start').disabled=true;
+  try{const wasRunning=!!running;const result=await chrome.runtime.sendMessage(running?{target:'worker',type:'stop'}:{target:'worker',type:'start',tabId:currentTab.id});if(result?.error)throw Error(result.error);await load();if(!wasRunning&&running)window.close()}catch(e){error(e.message);updateStart()}
+};
+$('japanese-toggle').onclick=async()=>{const showJapanese=$('japanese-toggle').getAttribute('aria-checked')!=='true';await chrome.storage.local.set({showJapanese});$('japanese-toggle').setAttribute('aria-checked',String(showJapanese))};
+function showView(view) {
+  for (const name of ['practice', 'words', 'settings']) $(name + '-view').hidden = name !== view;
+  $('heading').textContent = {practice: 'Taku', words: 'Saved words', settings: 'Settings'}[view];
+  $('back').hidden = view === 'practice';
+  $('tools').hidden = view !== 'practice';
+  if (view !== 'practice') $('back').focus();
+}
+$('open-words').onclick = () => showView('words');
+$('open-settings').onclick = () => showView('settings');
+$('back').onclick = () => showView('practice');
+$('export').onclick=async()=>{const {bank=[]}=await chrome.storage.local.get('bank');const blob=new Blob([JSON.stringify(bank,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='taku-words.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)};
+load();

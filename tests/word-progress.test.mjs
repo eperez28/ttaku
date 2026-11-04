@@ -1,0 +1,6 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {recognizedPrefix,compactLines} from '../extension/word-progress.js';
+const tokens=[{japanese:'大丈夫',reading:'だいじょうぶ',romaji:'daijoubu'},{japanese:'です',reading:'です',romaji:'desu'},{japanese:'か',reading:'か',romaji:'ka?'}];
+test('partial recognition fills only complete words in order',()=>{assert.equal(recognizedPrefix(tokens,'大'),0);assert.equal(recognizedPrefix(tokens,'大丈夫'),1);assert.equal(recognizedPrefix(tokens,'大丈夫です'),2);assert.equal(recognizedPrefix(tokens,'大丈夫ですか？'),3)});
+test('kana transcription also matches the target reading',()=>assert.equal(recognizedPrefix(tokens,'ダイジョウブです'),2));
+test('wrong or out-of-order words never advance the prefix',()=>{assert.equal(recognizedPrefix(tokens,'ありがとうございます'),0);assert.equal(recognizedPrefix(tokens,'ですか'),0);assert.equal(recognizedPrefix(tokens,''),0)});
+test('long source phrases split into single short lines without losing tokens',()=>{const input={japanese:'大丈夫ですか'.repeat(5),reading:'だいじょうぶですか'.repeat(5),romaji:tokens.map(t=>t.romaji).join(' '),tokens:Array.from({length:5},()=>tokens).flat(),words:[]};const lines=compactLines([input]);assert.ok(lines.length>1);assert.equal(lines.flatMap(l=>l.tokens).length,15);for(const line of lines){assert.ok(line.romaji.length<=38);assert.ok(line.tokens.length<=6)}});
