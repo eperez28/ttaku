@@ -9,10 +9,9 @@ h1{font-size:15px;font-weight:650;margin:0}
 button{font:inherit;cursor:pointer}
 button:disabled{cursor:default;opacity:.45}
 button:focus-visible,a:focus-visible,input:focus-visible{outline:2px solid #7aa5d8;outline-offset:2px}
-.icon{height:32px;width:32px;display:grid;place-items:center;padding:0;background:none;border:0;border-radius:8px;color:#4a4a4d}
+.icon{height:34px;width:34px;display:grid;place-items:center;padding:0;background:none;border:0;border-radius:8px;color:#3a3a3c}
 .icon:hover,.secondary:hover{background:#f0f0f1}
-.icon svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.65;stroke-linecap:round;stroke-linejoin:round}
-.icon svg.filled{fill:currentColor;stroke:none}
+.icon svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
 h2{font-size:17px;line-height:1.35;letter-spacing:-.2px;font-weight:600;margin:0 0 14px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
 h3{font-size:12px;font-weight:650;color:#49494d;margin:16px 0 6px}
 h3:first-child{margin-top:0}
