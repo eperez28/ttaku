@@ -67,3 +67,17 @@ export function recognizedMatches(tokens,transcript){
  }
  return {mask,partial};
 }
+
+export function punctuateLine(line){
+ if(!line||!line.romaji)return line;
+ const jp=String(line.japanese||'');
+ let mark='';
+ if(/[！!]/.test(jp))mark='!';
+ else if(/[？?]|か$|か[。！!]?$/.test(jp))mark='?';
+ else if(/[。．.]/.test(jp)||jp)mark='.';
+ if(!mark||/[.!?,]$/.test(line.romaji.trim()))return line;
+ const romaji=line.romaji.trim()+mark;
+ let tokens=line.tokens;
+ if(tokens?.length){tokens=tokens.map((tok,i)=>i===tokens.length-1?{...tok,romaji:(tok.romaji||'').replace(/[.!?]+$/,'')+mark}:tok)}
+ return {...line,romaji,tokens};
+}

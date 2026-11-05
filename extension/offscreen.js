@@ -2,7 +2,7 @@
 // Meta realtime stream. HTTP Meta calls are delegated to the service worker;
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
-import { recognizedPrefix, recognizedMatches, compactLines, isPauseWorthy } from './word-progress.js';
+import { recognizedPrefix, recognizedMatches, compactLines, isPauseWorthy, punctuateLine } from './word-progress.js';
 import { matchReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
@@ -165,7 +165,7 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     const built = await meta({ type: 'phrase-display', text });
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
-    lines = built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || ''));
+    lines = built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(punctuateLine);
     if (!lines.length) { phase = 'error'; saveDiag('could not build a line from that'); emit({ type: 'state', phase: 'error', message: 'I couldn’t make out that line.' }); return; }
     lineIndex = 0; showLine();
     // Precise token alignment arrives just behind the display and swaps in
