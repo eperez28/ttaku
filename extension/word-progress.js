@@ -55,7 +55,7 @@ export function recognizedMatches(tokens,transcript){
  for(const token of tokens){
   const cands=[cleanJapanese(token.japanese||token.text||''),cleanJapanese(token.reading||'')].filter(Boolean);
   let idx=-1,len=0;
-  for(const cand of cands){const i=heard.indexOf(cand,pos);if(i>=0&&i-pos<=8&&(idx<0||i<idx)){idx=i;len=cand.length}}
+  for(const cand of cands){const i=heard.indexOf(cand,pos);if(i>=0&&(idx<0||i<idx)){idx=i;len=cand.length}}
   if(idx>=0){mask.push(true);pos=idx+len}else mask.push(false);
  }
  for(let i=0;i<tokens.length;i++){

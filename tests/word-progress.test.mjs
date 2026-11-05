@@ -28,3 +28,5 @@ test('everything heard displays as one wrapped block, not pieces',()=>{const lin
 test('compound verbs split into stem and ending',()=>{const out=expandContractions({japanese:'引っ掻き回した',reading:'ひっかきまわした',romaji:'hikkakimawashita',tokens:[{japanese:'引っ掻き回した',reading:'ひっかきまわした',romaji:'hikkakimawashita'}]});assert.deepEqual(out.tokens.map(t=>t.romaji),['hikkaki','mawashita']);assert.equal(out.tokens[0].reading,'ひっかき');assert.equal(out.romaji,'hikkaki mawashita')});
 
 test('a restated seam is said once, not twice',()=>{const lines=[{japanese:'おう',reading:'おう',romaji:'Ou',tokens:[{japanese:'おう',reading:'おう',romaji:'Ou'}]},{japanese:'おう待てろ',reading:'おうまてろ',romaji:'Ou matte ro',tokens:[{japanese:'おう',reading:'おう',romaji:'Ou'},{japanese:'待てろ',reading:'まてろ',romaji:'matte ro'}]}];const all=combineLines(lines);assert.equal(all.romaji,'Ou matte ro');assert.equal(all.japanese,'おう待てろ')});
+
+test('fill finds later words even when an earlier word was garbled far behind',()=>{const {mask}=recognizedMatches(tokens,'ぜんぜんちがうけど大丈夫です');assert.equal(mask[1],true);assert.equal(mask[0],true)});

@@ -220,7 +220,14 @@ async function check(segment) {
     const judge = r => {
       const a = matchReading(phrase.reading, r.reading || '');
       const b2 = matchReading(phrase.reading, r.heard || '');
-      return b2.similarity > a.similarity ? { heard: r.heard || '', ...b2 } : { heard: r.heard || '', ...a };
+      const base = b2.similarity > a.similarity ? { heard: r.heard || '', ...b2 } : { heard: r.heard || '', ...a };
+      // Also grade word by word: most of the line said in order is a pass,
+      // even when the recognizer garbles the sounds between the words.
+      const coverage = Math.max(
+        matchCoverage(phrase.tokens || [], recognizedMatches(phrase.tokens || [], r.reading || '').mask),
+        matchCoverage(phrase.tokens || [], recognizedMatches(phrase.tokens || [], r.heard || '').mask)
+      );
+      return { ...base, coverage, passed: base.passed || (coverage >= 0.75 && base.similarity >= 45) };
     };
     // One attempt can span several breaths: keep the pieces and judge the
     // whole thing, not just the fragment that happened to end a segment.
@@ -250,7 +257,7 @@ async function check(segment) {
         emit({ type: 'state', phase: 'listening', message: '' }); openLive(); return;
       }
     }
-    saveDiag(result.passed ? 'repeat accepted, playing again' : 'repeat not accepted (match ' + result.similarity + '%)');
+    saveDiag(result.passed ? 'repeat accepted, playing again' : 'repeat not accepted (match ' + result.similarity + '%, words ' + Math.round((result.coverage || 0) * 100) + '%)');
     emit({ type: 'result', ...result });
     if (result.passed) { phase = 'passed'; emit({ type: 'word-progress', count: phrase.tokens?.length || 100 }); await chrome.runtime.sendMessage({ target: 'worker', type: 'passed', words: (phrase.words?.length ? phrase.words : (phrase.tokens || []).map(tok => ({ japanese: tok.japanese || '', reading: tok.reading || '', romaji: tok.romaji || '', meaning: '' }))) }); setTimeout(() => { if (ticket === epoch) advance(); }, 650); }
     else { phase = 'retry'; emit({ type: 'struggle-help' }); emit({ type: 'state', phase, message: result.heard ? 'Try that line again.' : 'I couldn’t hear you.' }); setTimeout(() => { if (ticket === epoch) listen('retry'); }, 1300); }
