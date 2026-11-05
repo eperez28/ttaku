@@ -9,9 +9,7 @@ import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from '.
 let context, tabStream, micStream, sessionId, phase = 'off', phrase = null, lines = [], lineIndex = 0, tabSegments, micSegments, epoch = 0, armedAt = 0;
 let live = null, liveReady = false, liveQueue = [], liveFailed = false, liveEndTimer = null;
 let apiKeyCache = null;
-let activeDisplay = null;
 let helpTimer = null;
-let sourceLive = null, sourceReady = false, sourceQueue = [], sourceText = '', sourceWaiter = null, sourceFailed = false;
 const emit = event => chrome.runtime.sendMessage({ target: 'worker', type: 'audio-event', sessionId, event }).catch(() => {});
 let diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() };
 let recentPeak = 0;
@@ -32,47 +30,6 @@ async function getApiKey() {
   try { const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-get' }); apiKeyCache = r?.key || null; } catch {}
   return apiKeyCache;
 }
-function finishSource(text) {
-  const waiter = sourceWaiter; sourceWaiter = null;
-  const ws = sourceLive; sourceLive = null; sourceReady = false; sourceQueue = [];
-  if (ws) { try { ws.close(); } catch {} }
-  if (waiter) waiter(text || sourceText || '');
-}
-function openSourceLive() {
-  if (sourceLive || sourceFailed) return;
-  sourceText = ''; sourceQueue = [];
-  if (!apiKeyCache) { sourceFailed = true; return; }
-  let ws;
-  try { ws = new WebSocket(META_WS); } catch { sourceFailed = true; return; }
-  sourceLive = ws; ws.binaryType = 'arraybuffer';
-  ws.onopen = () => { try { ws.send(JSON.stringify(buildHandshake(apiKeyCache))); } catch {} };
-  ws.onmessage = e => {
-    if (ws !== sourceLive || typeof e.data !== 'string') return;
-    let m; try { m = JSON.parse(e.data); } catch { return; }
-    if (isHandshakeAck(m)) { sourceReady = true; for (const f of sourceQueue) { try { ws.send(f); } catch {} } sourceQueue = []; return; }
-    if (m.type === 'error') { sourceFailed = true; finishSource(''); return; }
-    const partial = cumulativeTranscript(m);
-    if (partial) { sourceText = partial.text; if (partial.final) finishSource(sourceText); }
-  };
-  ws.onerror = () => { sourceFailed = true; };
-  ws.onclose = () => { if (ws === sourceLive) finishSource(sourceText); };
-}
-function streamTab(chunk) {
-  if (!sourceLive || sourceFailed) return;
-  const bytes = pcm24Bytes(chunk, context.sampleRate);
-  const frame = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
-  if (sourceReady && sourceLive?.readyState === WebSocket.OPEN) { try { sourceLive.send(frame); } catch { sourceFailed = true; } }
-  else if (sourceQueue.length < 240) sourceQueue.push(frame);
-}
-function finalizeSourceLive() {
-  if (!sourceLive) return Promise.resolve('');
-  try { if (sourceLive.readyState === WebSocket.OPEN) sourceLive.send(JSON.stringify({ type: 'endStream' })); } catch {}
-  return new Promise(resolve => {
-    sourceWaiter = resolve;
-    setTimeout(() => { if (sourceWaiter === resolve) finishSource(sourceText); }, 400);
-  });
-}
-function closeSourceLive() { sourceLive = null; sourceReady = false; sourceQueue = []; sourceWaiter = null; }
 const meta = message => chrome.runtime.sendMessage({ target: 'meta', ...message });
 
 async function node(stream, callback) {
@@ -159,25 +116,17 @@ async function showLine() {
   }).catch(() => {});
 }
 async function advance() { closeLive(); if (lineIndex + 1 < lines.length) { epoch++; lineIndex++; await showLine(); } else resume(); }
-async function analyze(segment, prePaused = false, liveTextPromise = null) {
+async function analyze(segment, prePaused = false) {
   const ticket = ++epoch; phase = 'processing'; const startedAt = performance.now();
-  // Fast path: one ASR call decides the pause. The romaji is built *while*
-  // the video is already paused, instead of making the pause wait for it.
+  // The old Taku shape: the video is already paused; one transcription
+  // call, one line-building call, then the complete block goes on screen.
   try {
-    let text = '';
-    if (liveTextPromise) { try { text = (await liveTextPromise || '').trim(); } catch {} }
-    // A live transcript that is far shorter than the clip is a tail fragment
-    // (the socket joined mid-line): trust the full recording instead.
-    const liveChars = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
-    if (liveChars < Math.min(12, segment.duration * 2)) text = '';
-    if (!/[\u3040-\u30ff\u3400-\u9fff]/.test(text)) {
-      const heard = await meta({ type: 'transcribe', audioBase64: wav24Base64(segment.chunks, context.sampleRate) });
-      if (heard?.error) throw Error(heard.error);
-      text = (heard?.text || '').trim();
-    }
+    const wav = wav24Base64(segment.chunks, context.sampleRate);
+    const heard = await meta({ type: 'transcribe', audioBase64: wav });
+    if (heard?.error) throw Error(heard.error);
     if (ticket !== epoch) return;
+    const text = (heard?.text || '').trim();
     if (!isPauseWorthy(text, segment.duration)) {
-      // Not a line worth stopping for: a grunt, a laugh, or a fragment.
       phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('not a pause-worthy line, letting it play');
       if (prePaused) emit({ type: 'resume' }); else emit({ type: 'state', phase: 'empty', message: '' });
       return;
@@ -185,99 +134,42 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     saveDiag('Japanese line confirmed, pausing');
     if (!prePaused) emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
     emit({ type: 'state', phase: 'processing', message: 'Getting this line…' });
-    // A clip that may hold more than one speaker gets diarized, and each
-    // speaker's turn becomes its own practice line — never a blend. The
-    // display stream starts immediately; diarization only wins if it lands
-    // before the first line is on screen.
-    const jpChars = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
-    const multiClue = segment.duration > 4 || jpChars > 24 || (text.match(/[。！？]/g) || []).length >= 2;
-    const diarPromise = multiClue ? meta({ type: 'diarize', audioBase64: wav24Base64(segment.chunks, context.sampleRate) }).catch(() => null) : null;
-    activeDisplay = { id: ticket, lines: [], shown: false, heldLines: [], speakerDecision: multiClue ? 'pending' : 'single' };
-    const streamRef = activeDisplay;
-    const builtPromise = meta({ type: 'phrase-display-stream', text, streamId: ticket }).catch(e => ({ error: e.message }));
-    let lateDiar = null;
-    const foldIntoPhrase = line => {
-      if (!phrase) return;
-      phrase.japanese = (phrase.japanese || '') + (line.japanese || '');
-      phrase.reading = (phrase.reading || '') + (line.reading || '');
-      phrase.romaji = (phrase.romaji || '') + ' ' + (line.romaji || '');
-      phrase.tokens = [...(phrase.tokens || []), ...(line.tokens || [])];
-    };
-    const flushHeld = (allowedText = null) => {
-      const held = streamRef.heldLines.splice(0);
-      if (!streamRef.shown || !phrase || !held.length) return;
-      let changed = false;
-      for (const heldLine of held) {
-        if (allowedText && !cleanJapanese(allowedText).includes(cleanJapanese(heldLine.japanese || ''))) continue;
-        foldIntoPhrase(heldLine); changed = true;
-      }
-      if (changed) emit({ type: 'phrase-update', phrase });
-    };
-    const applySpeakerDecision = async result => {
-      const turns = result && !result.error && Array.isArray(result.turns) ? result.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)) : null;
-      if (!turns || !turns.length) { streamRef.speakerDecision = 'single'; flushHeld(); return; }
-      const firstSpeaker = turns[0].speaker;
-      const hasChange = turns.some(tn => tn.speaker !== firstSpeaker);
-      if (!hasChange) { streamRef.speakerDecision = 'single'; flushHeld(); return; }
-      streamRef.speakerDecision = 'multi';
-      const run = [];
-      for (const tn of turns) { if (run.length && tn.speaker !== firstSpeaker) break; run.push(tn); }
-      const allowedText = run.map(tn => tn.text).join('');
-      flushHeld(allowedText);
-      // If the line on screen already swallowed the next speaker, cut it back.
-      if (phrase?.japanese && cleanJapanese(allowedText) && !cleanJapanese(allowedText).includes(cleanJapanese(phrase.japanese)) && cleanJapanese(phrase.japanese).length > cleanJapanese(allowedText).length) {
-        const builtTurn = await meta({ type: 'phrase-display', text: run[0].text }).catch(() => null);
-        const replacement = builtTurn && !builtTurn.error && !builtTurn.empty ? combineLines((builtTurn.lines || []).map(l => punctuateLine(expandContractions(normalizeFiller(l))))) : null;
-        if (replacement && streamRef.shown && phrase) { phrase = replacement; lines = [replacement]; emit({ type: 'phrase-update', phrase }); }
-      }
-      streamRef.heldLines = [];
-    };
-    if (diarPromise) {
-      const raced = await Promise.race([diarPromise, new Promise(r => setTimeout(() => r('late'), 800))]);
-      if (ticket !== epoch) return;
-      if (raced === 'late') {
-        lateDiar = diarPromise;
-        setTimeout(() => { if (streamRef.speakerDecision === 'pending') { streamRef.speakerDecision = 'single'; flushHeld(); } }, 4000);
-      } else {
-        const turns = raced && !raced.error && Array.isArray(raced.turns) ? raced.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)) : null;
-        if (turns && turns.length >= 2 && !activeDisplay.shown) {
-          activeDisplay = null;
-          const firstTurn = turns.find(tn => (tn.text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length >= 3) || turns[0];
-          lines = [{ pendingTurn: firstTurn.text, speaker: firstTurn.speaker || '', japanese: '', reading: '', romaji: '', tokens: [], words: [], meaning: '' }];
-          lineIndex = 0; saveDiag('split into ' + turns.length + ' speaker turns');
-          await showLine(); return;
+    // Never display past a speaker change: if this clip holds several
+    // sentences, diarization finds where the first speaker stops.
+    let blockText = text;
+    const multi = (text.match(/[。！？]/g) || []).length >= 2 || segment.duration > 4;
+    if (multi) {
+      try {
+        const d = await meta({ type: 'diarize', audioBase64: wav });
+        if (ticket !== epoch) return;
+        const turns = d && !d.error && Array.isArray(d.turns) ? d.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)) : [];
+        if (turns.length && turns.some(tn => tn.speaker !== turns[0].speaker)) {
+          const run = [];
+          for (const tn of turns) { if (run.length && tn.speaker !== turns[0].speaker) break; run.push(tn); }
+          if (run.length) { blockText = run.map(tn => tn.text).join(''); saveDiag('first speaker only, ' + run.length + ' turn(s)'); }
         }
-        if (turns) await applySpeakerDecision(raced);
-      }
+      } catch {}
     }
-    const built = await builtPromise;
-    if (lateDiar) lateDiar.then(result => { if (streamRef.speakerDecision === 'pending' || streamRef.speakerDecision === 'multi') applySpeakerDecision(result); });
-    const streamed = activeDisplay; activeDisplay = null;
-    if (built?.error && !streamed?.shown) throw Error(built.error);
+    const built = await meta({ type: 'phrase-display', text: blockText });
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
-    lines = built?.error && streamed?.shown ? streamed.lines : built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(l => punctuateLine(expandContractions(normalizeFiller(l))));
-    if (!streamed?.shown) { const combined = combineLines(lines); lines = combined ? [combined] : []; }
-    if (streamed?.shown && phrase) {
-      // One line per pause: whatever is on screen is the whole pause.
-      lines = [phrase]; lineIndex = 0;
-    }
+    const rawLines = built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(l => punctuateLine(expandContractions(normalizeFiller(l))));
+    const block = combineLines(rawLines);
+    lines = block ? [block] : [];
     if (!lines.length) {
-      // Only fragments here (a shout, a laugh): not a line. Let it play.
       phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('only fragments in that clip, letting it play');
       if (prePaused) emit({ type: 'resume' }); else emit({ type: 'state', phase: 'empty', message: '' });
       return;
     }
-    if (!streamed?.shown) { lineIndex = 0; showLine(); }
-    // Precise token alignment arrives just behind the display and swaps in
-    // without disturbing words already filled.
+    lineIndex = 0; await showLine();
+    // Precise token alignment swaps in behind the block, keeping any fill.
     const shown = phrase;
     if (!shown) return;
-    meta({ type: 'phrase-text', text }).then(r => {
+    meta({ type: 'phrase-text', text: blockText }).then(r => {
       if (!r || r.error || r.empty || phrase !== shown) return;
-      const full = (r.lines?.length ? r.lines : [r]).map(l => ({ ...l }));
-      const match = full.find(l => l.japanese === shown.japanese) || full[0];
-      if (match?.tokens?.length) { shown.tokens = match.tokens; if (match.reading) shown.reading = match.reading; emit({ type: 'phrase-tokens', tokens: match.tokens }); }
+      const full = (r.lines?.length ? r.lines : [r]);
+      const tokens = full.flatMap(l => l.tokens || []);
+      if (tokens.length) { shown.tokens = tokens; shown.reading = full.map(l => l.reading || '').join(''); emit({ type: 'phrase-tokens', tokens }); }
     }).catch(() => {});
   } catch (error) { if (ticket === epoch) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('Meta error: ' + error.message); emit({ type: 'state', phase: 'error', message: error.message }); } }
 }
@@ -294,10 +186,10 @@ async function check(segment) {
     else { phase = 'retry'; emit({ type: 'struggle-help' }); emit({ type: 'state', phase, message: result.heard ? 'Try that line again.' : 'I couldn’t hear you.' }); setTimeout(() => { if (ticket === epoch) listen('retry'); }, 1300); }
   } catch (error) { if (ticket === epoch) { phase = 'error'; saveDiag('repeat check failed: ' + error.message); emit({ type: 'state', phase, message: error.message }); } }
 }
-function resume() { epoch++; closeLive(); closeSourceLive(); phase = 'watching'; phrase = null; lines = []; lineIndex = 0; tabSegments.reset(); micSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'resume' }); emit({ type: 'state', phase, message: '' }); }
-async function stop() { epoch++; closeLive(); closeSourceLive(); apiKeyCache = null; phase = 'off'; for (const stream of [tabStream, micStream]) stream?.getTracks().forEach(t => t.stop()); tabStream = micStream = null; if (context) { await context.close(); context = null; } }
+function resume() { epoch++; closeLive(); phase = 'watching'; phrase = null; lines = []; lineIndex = 0; tabSegments.reset(); micSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'resume' }); emit({ type: 'state', phase, message: '' }); }
+async function stop() { epoch++; closeLive(); apiKeyCache = null; phase = 'off'; for (const stream of [tabStream, micStream]) stream?.getTracks().forEach(t => t.stop()); tabStream = micStream = null; if (context) { await context.close(); context = null; } }
 async function start(m) {
-  await stop(); sessionId = m.sessionId; apiKeyCache = null; sourceFailed = false; getApiKey(); diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; recentPeak = 0; saveDiag();
+  await stop(); sessionId = m.sessionId; apiKeyCache = null; getApiKey(); diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; recentPeak = 0; saveDiag();
   try {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
@@ -307,14 +199,10 @@ async function start(m) {
       for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > recentPeak) recentPeak = v; }
       saveDiag();
       if (phase === 'watching' && performance.now() > armedAt) {
-        const wasStarted = tabSegments.started;
         const segment = tabSegments.push(chunk);
-        if (!wasStarted && tabSegments.started) { openSourceLive(); for (const pre of tabSegments.chunks.slice(0, -1)) streamTab(pre); }
-        if (tabSegments.started || segment) streamTab(chunk);
         if (segment) {
           diag.clips++; saveDiag('heard a clip, sending it to Meta…');
-          const liveText = finalizeSourceLive();
-          emit({ type: 'pause', duration: segment.duration, delaySeconds: .35 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); analyze(segment, true, liveText);
+          emit({ type: 'pause', duration: segment.duration, delaySeconds: .35 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); analyze(segment, true);
         }
       }
     }); tabSource.connect(context.destination);
@@ -329,34 +217,6 @@ async function start(m) {
   } catch (error) { await stop(); throw error; }
 }
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
-  if (m.target === 'display' && sender.id === chrome.runtime.id) {
-    if (m.type === 'romaji-preview' && activeDisplay && m.streamId === activeDisplay.id && !activeDisplay.shown && m.romaji) { emit({ type: 'romaji-preview', romaji: m.romaji }); return; }
-    if (m.type === 'display-line' && activeDisplay && m.streamId === activeDisplay.id && m.line) {
-      const line = punctuateLine(expandContractions(normalizeFiller(m.line)));
-      if (activeDisplay.shown && phrase) {
-        // Later sentences wait until diarization says whose they are.
-        if (activeDisplay.speakerDecision === 'pending') { activeDisplay.heldLines.push(line); return; }
-        if (activeDisplay.speakerDecision === 'multi') return; // another speaker: not this pause
-        // Same speaker: grow the block on screen, wrapped.
-        phrase.japanese = (phrase.japanese || '') + (line.japanese || '');
-        phrase.reading = (phrase.reading || '') + (line.reading || '');
-        phrase.romaji = (phrase.romaji || '') + ' ' + (line.romaji || '');
-        phrase.tokens = [...(phrase.tokens || []), ...(line.tokens || [])];
-        emit({ type: 'phrase-update', phrase });
-        return;
-      }
-      const last = activeDisplay.lines[activeDisplay.lines.length - 1];
-      if (last && repeatKey(last) && repeatKey(last) === repeatKey(line)) {
-        last.japanese = (last.japanese || '') + (line.japanese || '');
-        last.reading = (last.reading || '') + (line.reading || '');
-        last.romaji = (last.romaji || '') + ' ' + (line.romaji || '');
-        last.tokens = [...(last.tokens || []), ...(line.tokens || [])];
-      } else activeDisplay.lines.push(line);
-      const combined = combineLines(activeDisplay.lines);
-      if (combined && isSubstantialLine(combined)) { lines = [combined]; activeDisplay.shown = true; lineIndex = 0; showLine(); }
-    }
-    return;
-  }
   if (m.target !== 'audio' || sender.id !== chrome.runtime.id) return;
   const run = async () => {
     if (m.type === 'key-changed') { closeLive(); liveFailed = true; return { ok: true }; }
