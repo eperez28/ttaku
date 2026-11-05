@@ -10,7 +10,7 @@ export function normalizeReading(s = '') {
     .replace(/[だぢづでど]/g, c => 'たちつてと'['だぢづでど'.indexOf(c)])
     .replace(/[ばびぶべぼぱぴぷぺぽ]/g, c => 'はひふへほはひふへほ'['ばびぶべぼぱぴぷぺぽ'.indexOf(c)])
     // Long vowels: ou/ei spelling and held vowels count as one sound.
-    .replace(/ー/g, '').replace(/おう/g, 'お').replace(/えい/g, 'え')
+    .replace(/ー/g, '').replace(/([おこそとのほもよろごぞどぼぽ])う/g, '$1').replace(/([えけせてねへめれげぜでべぺ])い/g, '$1')
     .replace(/([あいうえお])\1+/g, '$1')
     .replace(/[^ぁ-ゖーa-z0-9]/gi, '').toLowerCase();
 }

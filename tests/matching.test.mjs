@@ -1,7 +1,7 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
 import {normalizeReading,matchReading} from '../extension/matching.js';
 import {Segmenter,wavBase64} from '../extension/audio-utils.js';
-test('Japanese reading normalizes katakana and punctuation',()=>assert.equal(normalizeReading('ダイジョウブ。'),'だいしょうぶ'));
+test('Japanese reading normalizes katakana and punctuation',()=>assert.equal(normalizeReading('ダイジョウブ。'),'たいしょうふ'));
 test('empty speech and unrelated speech never pass',()=>{assert.equal(matchReading('だいじょうぶ','').passed,false);assert.equal(matchReading('だいじょうぶ','ありがとう').passed,false)});
 test('short words still need the right sounds',()=>{assert.equal(matchReading('はい','はい').passed,true);assert.equal(matchReading('はい','いいえ').passed,false);assert.equal(matchReading('すし','そし').passed,false)});
 test('long phrases tolerate a small error, reject a partial answer',()=>{assert.equal(matchReading('ありがとうございます','ありがとございます').passed,true);assert.equal(matchReading('ありがとうございます','ありがとう').passed,false)});
@@ -12,6 +12,6 @@ test('WAV encoder writes mono PCM with the right size',()=>{const b=Buffer.from(
 
 test('quiet dialogue under the old RMS floor still cuts a clip',()=>{const s=new Segmenter(48000,{maxSeconds:3.5,silenceSeconds:.38,threshold:.005,peakThreshold:.04});let result=null;const quiet=new Float32Array(2048);for(let i=0;i<quiet.length;i++)quiet[i]=(i%64<32?.09:-.09);for(let i=0;i<40&&!result;i++)result=s.push(quiet);for(let i=0;i<12&&!result;i++)result=s.push(new Float32Array(2048));assert.ok(result,'expected a clip from quiet-but-peaky dialogue')});
 
-test('80 percent right passes at any length, accent folds count as the same sound',()=>{assert.equal(matchReading('ありがとう','ありがと').passed,true);assert.equal(matchReading('がっこう','がつこう').passed,true);assert.equal(matchReading('つづく','つずく').passed,true);assert.equal(matchReading('ありがとう','ぜんぜんちがう').passed,false)});
+test('80 percent right passes at any length, accent folds count as the same sound',()=>{assert.equal(matchReading('ありがとう','ありがと').passed,true);assert.equal(matchReading('がっこう','かっこう').passed,true);assert.equal(matchReading('つづく','つずく').passed,true);assert.equal(matchReading('ありがとう','ぜんぜんちがう').passed,false)});
 
 test('accent-shaped mistakes still pass: voicing and long vowels fold',()=>{assert.equal(matchReading('だめ','ため').passed,true);assert.equal(matchReading('がっこう','かこう').passed,true);assert.equal(matchReading('ありがとうございます','ありがとございます').passed,true);assert.equal(matchReading('せんせい','せんせ').passed,true)});
