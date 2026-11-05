@@ -3,13 +3,14 @@
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
 import { recognizedPrefix, recognizedMatches, matchCoverage, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey, pickPracticeLine, isSubstantialLine, combineLines, cleanJapanese } from './word-progress.js';
-import { matchReading } from './matching.js';
+import { matchReading, normalizeReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
 let context, tabStream, micStream, sessionId, phase = 'off', phrase = null, lines = [], lineIndex = 0, tabSegments, micSegments, epoch = 0, armedAt = 0;
 let live = null, liveReady = false, liveQueue = [], liveFailed = false, liveEndTimer = null;
 let apiKeyCache = null;
 let helpTimer = null;
+let attemptParts = [], lastLiveHeard = '';
 let pendingCaption = '', pendingCaptionAt = 0;
 let sourceLive = null, sourceReady = false, sourceQueue = [], sourceFailed = false;
 function closeSourceLive() { const ws = sourceLive; sourceLive = null; sourceReady = false; sourceQueue = []; if (ws) { try { ws.close(); } catch {} } }
@@ -91,6 +92,7 @@ async function openLive() {
     if (isHandshakeAck(m)) { liveReady = true; for (const frame of liveQueue) { try { ws.send(frame); } catch {} } liveQueue = []; return; }
     if (m.type === 'error') { liveFailed = true; closeLive(); return; }
     const partial = cumulativeTranscript(m);
+    if (partial && phase === 'listening') lastLiveHeard = partial.text;
     // Each cumulative partial replaces the last one; fill every word it
     // matches, even if an earlier word was misheard.
     if (partial && phrase && ['listening', 'checking'].includes(phase)) {
@@ -119,7 +121,7 @@ async function acceptLive() {
   await chrome.runtime.sendMessage({ target: 'worker', type: 'passed', words: (phrase.words?.length ? phrase.words : (phrase.tokens || []).map(tok => ({ japanese: tok.japanese || '', reading: tok.reading || '', romaji: tok.romaji || '', meaning: '' }))) }).catch(() => {});
   setTimeout(() => { if (ticket === epoch) advance(); }, 500);
 }
-function listen(phaseName = 'listening') { phase = 'listening'; micSegments.reset(); armedAt = performance.now() + 450; saveDiag('paused, waiting for you to repeat it'); emit({ type: 'word-progress', count: 0 }); emit({ type: 'state', phase: phaseName, message: '' }); openLive(); clearTimeout(helpTimer); helpTimer = setTimeout(() => { if (phase === 'listening') emit({ type: 'struggle-help' }); }, 12000); }
+function listen(phaseName = 'listening') { phase = 'listening'; micSegments.reset(); armedAt = performance.now() + 150; saveDiag('paused, waiting for you to repeat it'); emit({ type: 'word-progress', count: 0 }); emit({ type: 'state', phase: phaseName, message: '' }); openLive(); clearTimeout(helpTimer); helpTimer = setTimeout(() => { if (phase === 'listening') emit({ type: 'struggle-help' }); }, 12000); }
 async function ensureBuiltLine(index) {
   const item = lines[index]; if (!item) return null;
   if (!item.pendingTurn) return item;
@@ -139,6 +141,7 @@ async function ensureBuiltLine(index) {
   return target;
 }
 async function showLine() {
+  attemptParts = []; lastLiveHeard = '';
   let current = await ensureBuiltLine(lineIndex);
   while (!current && lineIndex + 1 < lines.length) { lineIndex++; current = await ensureBuiltLine(lineIndex); }
   if (!current) { resume(); return; }
@@ -214,19 +217,38 @@ async function check(segment) {
     const heardResult = await meta({ type: 'attempt-reading', audioBase64: wav });
     if (heardResult?.error) throw Error(heardResult.error);
     if (ticket !== epoch) return;
-    // Judge every honest reading of the attempt and keep the best score:
-    // the converted reading, the raw transcript, and — if those fall
-    // short — a second transcription with different turn detection.
     const judge = r => {
       const a = matchReading(phrase.reading, r.reading || '');
       const b2 = matchReading(phrase.reading, r.heard || '');
       return b2.similarity > a.similarity ? { heard: r.heard || '', ...b2 } : { heard: r.heard || '', ...a };
     };
+    // One attempt can span several breaths: keep the pieces and judge the
+    // whole thing, not just the fragment that happened to end a segment.
+    attemptParts.push({ heard: heardResult.heard || '', reading: heardResult.reading || '' });
+    const combined = { heard: attemptParts.map(x => x.heard).join(''), reading: attemptParts.map(x => x.reading).join('') };
     let result = judge(heardResult);
+    if (attemptParts.length > 1) { const combinedResult = judge(combined); if (combinedResult.similarity > result.similarity) result = combinedResult; }
+    if (!result.passed && lastLiveHeard) { const liveResult = judge({ heard: lastLiveHeard, reading: '' }); if (liveResult.similarity > result.similarity) result = liveResult; }
     if (!result.passed) {
       const alt = await meta({ type: 'attempt-reading-alt', audioBase64: wav }).catch(() => null);
       if (ticket !== epoch) return;
-      if (alt && !alt.error && alt.heard) { const altResult = judge(alt); if (altResult.similarity > result.similarity) result = altResult; }
+      if (alt && !alt.error && alt.heard) {
+        const altResult = judge(alt);
+        const altCombined = judge({ heard: attemptParts.slice(0, -1).map(x => x.heard).join('') + alt.heard, reading: attemptParts.slice(0, -1).map(x => x.reading).join('') + (alt.reading || '') });
+        const best = altCombined.similarity > altResult.similarity ? altCombined : altResult;
+        if (best.similarity > result.similarity) result = best;
+      }
+    }
+    if (!result.passed) {
+      // They paused mid-line: the attempt so far is a clean start of the
+      // line. That is not a failure — keep listening for the rest of it.
+      const expectedN = normalizeReading(phrase.reading);
+      const heardN = normalizeReading(combined.reading || combined.heard);
+      if (attemptParts.length < 3 && heardN.length >= 2 && expectedN.startsWith(heardN)) {
+        saveDiag('mid-line pause, still listening');
+        phase = 'listening'; micSegments.reset(); armedAt = performance.now() + 120;
+        emit({ type: 'state', phase: 'listening', message: '' }); openLive(); return;
+      }
     }
     saveDiag(result.passed ? 'repeat accepted, playing again' : 'repeat not accepted (match ' + result.similarity + '%)');
     emit({ type: 'result', ...result });
@@ -242,7 +264,7 @@ async function start(m) {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: true }, video: false });
     context = new AudioContext(); await context.resume(); await context.audioWorklet.addModule('pcm-worklet.js');
-    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 6, silenceSeconds: .25, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 20, silenceSeconds: .6, threshold: .01 });
+    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 6, silenceSeconds: .25, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 20, silenceSeconds: 1.1, threshold: .01 });
     const tabSource = await node(tabStream, chunk => {
       for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > recentPeak) recentPeak = v; }
       saveDiag();
