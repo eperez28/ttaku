@@ -103,21 +103,25 @@ export function mergeRepeats(lines){
 
 export function expandContractions(line){
  if(!line?.tokens?.length)return line;
+ const AUX={mawashita:'まわした',mawashite:'まわして',mawasu:'まわす',shimatta:'しまった',shimatte:'しまって',shimau:'しまう',hajimeta:'はじめた',hajimete:'はじめて',hajimeru:'はじめる',sugita:'すぎた',sugite:'すぎて',sugiru:'すぎる',owatta:'おわった',owatte:'おわって',owaru:'おわる'};
  const tokens=[];
  for(const tok of line.tokens){
   const raw=String(tok.romaji||'');
   const punct=(raw.match(/[.,!?]+$/)||[''])[0];
   const word=raw.slice(0,raw.length-punct.length);
-  const m=word.match(/^(.{2,}?)(chatte|jatte)$/i);
-  if(!m){tokens.push(tok);continue}
-  const isCha=m[2].toLowerCase()==='chatte';
-  const suffixKana=isCha?'ちゃって':'じゃって';
-  const stemReading=String(tok.reading||'').replace(/(ちゃって|じゃって)$/,'');
+  const lower=word.toLowerCase();
+  let stem=null,suffixRomaji=null,suffixKana=null;
+  const contracted=lower.match(/^(.{2,}?)(chatte|jatte)$/);
+  const auxHit=Object.keys(AUX).find(suf=>lower.endsWith(suf)&&word.length-suf.length>=3);
+  if(contracted){stem=contracted[1];suffixRomaji=contracted[2];suffixKana=contracted[2]==='chatte'?'ちゃって':'じゃって'}
+  else if(auxHit){stem=word.slice(0,word.length-auxHit.length);suffixRomaji=auxHit;suffixKana=AUX[auxHit]}
+  if(!stem){tokens.push(tok);continue}
+  const stemReading=String(tok.reading||'').endsWith(suffixKana)?String(tok.reading).slice(0,String(tok.reading).length-suffixKana.length):String(tok.reading||'');
   const jp=String(tok.japanese||'');
   const jpStem=jp.endsWith(suffixKana)?jp.slice(0,jp.length-suffixKana.length):jp;
   const jpSuffix=jp.endsWith(suffixKana)?suffixKana:'';
-  tokens.push({...tok,romaji:m[1],reading:stemReading,japanese:jpStem});
-  tokens.push({japanese:jpSuffix,reading:suffixKana,romaji:m[2].toLowerCase()+punct});
+  tokens.push({...tok,romaji:stem,reading:stemReading,japanese:jpStem});
+  tokens.push({japanese:jpSuffix,reading:suffixKana,romaji:suffixRomaji+punct});
  }
  return {...line,tokens,romaji:tokens.map(tok=>tok.romaji).join(' ')};
 }
