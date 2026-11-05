@@ -58,10 +58,10 @@
    .end:hover,.end:focus-within{opacity:1}
    .end button{background:#141414e8}
    @media(prefers-reduced-motion:reduce){.fill,.controls{transition:none}}
-   </style><div class="end"><button id="stop" aria-label="Stop Taku" title="Stop Taku"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><section class="caption" id="card" hidden role="region" aria-label="Repeat the Japanese line"><div class="controls"><button id="replay" class="text" aria-label="Replay line" title="Replay line">Replay</button><button id="retry" class="text" aria-label="Try again" title="Try again">Try again</button><button id="commit" class="text" aria-label="Done speaking" title="Done speaking">Done</button><button id="details-toggle" class="text" aria-label="Meaning and words" title="Meaning and words">Meaning</button><button id="skip" class="text" aria-label="Skip line" title="Skip line">Skip</button></div><div class="glass"><div class="line" id="romaji"></div></div><div class="help" id="help" hidden></div><div class="status" id="feedback" role="status" aria-live="polite"></div><div class="details" id="details" hidden><div class="translation" id="meaning"></div><div class="japanese" id="japanese" hidden></div><div class="words" id="words"></div></div></section>`;
+   </style><div class="end"><button id="stop" aria-label="Stop Taku" title="Stop Taku"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><section class="caption" id="card" hidden role="region" aria-label="Repeat the Japanese line"><div class="controls"><button id="replay" class="text" aria-label="Replay line" title="Replay line">Replay</button><button id="retry" class="text" aria-label="Try again" title="Try again">Try again</button><button id="phonetics" class="text" aria-label="Show sounds" title="Show sounds">Phonetics</button><button id="details-toggle" class="text" aria-label="Meaning and words" title="Meaning and words">Meaning</button><button id="skip" class="text" aria-label="Skip line" title="Skip line">Skip</button></div><div class="glass"><div class="line" id="romaji"></div></div><div class="help" id="help" hidden></div><div class="status" id="feedback" role="status" aria-live="polite"></div><div class="details" id="details" hidden><div class="translation" id="meaning"></div><div class="japanese" id="japanese" hidden></div><div class="words" id="words"></div></div></section>`;
    $('details-toggle').onclick=()=>{$('details').hidden=!$('details').hidden};
    $('stop').onclick=()=>chrome.runtime.sendMessage({target:'worker',type:'stop'});
-   $('skip').onclick=()=>send({type:'skip'});$('retry').onclick=()=>send({type:'retry'});$('commit').onclick=()=>send({type:'commit'});
+   $('skip').onclick=()=>send({type:'skip'});$('retry').onclick=()=>send({type:'retry'});$('phonetics').onclick=()=>{const el=$('help');if(el.hidden)showHelp();else el.hidden=true};
    $('replay').onclick=()=>{previousRate=video.playbackRate;video.playbackRate=1;send({type:'replay'})};
    chrome.storage.local.get('showJapanese').then(({showJapanese})=>{if($('japanese'))$('japanese').hidden=!showJapanese}).catch(()=>{});
    for(const event of ['keydown','pointerdown','click'])host.addEventListener(event,e=>e.stopPropagation());
@@ -117,7 +117,7 @@
   $('feedback').textContent=['error','empty','retry'].includes(next)?message:'';
   if($('feedback').textContent)$('details').hidden=true;
   $('retry').hidden=!(next==='error'&&phrase);$('retry').disabled=!phrase;
-  $('replay').disabled=!phrase||['processing','replay','passed'].includes(next);$('commit').disabled=next!=='listening';$('details-toggle').disabled=!phrase;
+  $('replay').disabled=!phrase||['processing','replay','passed'].includes(next);$('phonetics').disabled=!phrase;$('details-toggle').disabled=!phrase;
   if(next==='processing'){$('details').hidden=true;$('card').hidden=true;wordEls=[]}
   if(next==='watching'){phrase=null;cardAnchor='bottom';$('details').hidden=true;wordEls=[]}
  }
