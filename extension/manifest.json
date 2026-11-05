@@ -1,9 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Ttaku \u2014 speak along",
-  "version": "1.0.0",
+  "version": "1.0.4",
   "description": "Pause anime, read romaji, and speak Japanese to continue. Powered by the Meta Model API.",
-  "permissions": ["activeTab", "tabCapture", "offscreen", "storage", "scripting"],
+  "permissions": [
+    "activeTab",
+    "tabCapture",
+    "offscreen",
+    "storage",
+    "scripting"
+  ],
   "host_permissions": [
     "https://*.crunchyroll.com/*",
     "http://127.0.0.1/*",
@@ -11,20 +17,37 @@
     "https://api.meta.ai/*",
     "wss://api.meta.ai/*"
   ],
-  "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_title": "Start / stop Ttaku", "default_popup": "setup.html" },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "action": {
+    "default_title": "Start / stop Ttaku",
+    "default_popup": "setup.html"
+  },
   "content_scripts": [
     {
-      "matches": ["https://*.crunchyroll.com/*", "http://127.0.0.1/*", "http://localhost/*"],
-      "js": ["content.js"],
+      "matches": [
+        "https://*.crunchyroll.com/*",
+        "http://127.0.0.1/*",
+        "http://localhost/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "all_frames": true
     }
   ],
   "commands": {
     "capture-phrase": {
-      "suggested_key": { "default": "Alt+Shift+J", "mac": "Alt+Shift+J" },
+      "suggested_key": {
+        "default": "Alt+Shift+J",
+        "mac": "Alt+Shift+J"
+      },
       "description": "Practice the phrase heard so far"
     }
   },
-  "icons": { "128": "icon.png" }
+  "icons": {
+    "128": "icon.png"
+  }
 }
