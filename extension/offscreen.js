@@ -143,6 +143,10 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
   try {
     let text = '';
     if (liveTextPromise) { try { text = (await liveTextPromise || '').trim(); } catch {} }
+    // A live transcript that is far shorter than the clip is a tail fragment
+    // (the socket joined mid-line): trust the full recording instead.
+    const liveChars = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
+    if (liveChars < Math.min(12, segment.duration * 2)) text = '';
     if (!/[\u3040-\u30ff\u3400-\u9fff]/.test(text)) {
       const heard = await meta({ type: 'transcribe', audioBase64: wav24Base64(segment.chunks, context.sampleRate) });
       if (heard?.error) throw Error(heard.error);
@@ -196,7 +200,7 @@ async function start(m) {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
     context = new AudioContext(); await context.resume(); await context.audioWorklet.addModule('pcm-worklet.js');
-    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 7, silenceSeconds: .38, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 20, silenceSeconds: .6, threshold: .018 });
+    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 6, silenceSeconds: .3, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 20, silenceSeconds: .6, threshold: .018 });
     const tabSource = await node(tabStream, chunk => {
       for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > recentPeak) recentPeak = v; }
       saveDiag();

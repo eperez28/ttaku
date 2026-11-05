@@ -113,10 +113,18 @@
   // The user pressed Play themselves: skip this line and keep watching.
   if(['listening','checking','retry','error','processing','passed'].includes(phase)){state('watching');send({type:'user-continue'})}
  }
+ function wireTracks(){
+  for(const track of video.textTracks||[]){
+   if(track.__takuWired)continue;track.__takuWired=true;
+   track.addEventListener?.('cuechange',()=>{if(active&&phase==='watching')send({type:'caption-boundary'})});
+  }
+ }
  function checkCue(){
   if(!active||phase!=='watching')return;
-  let key='';for(const track of video.textTracks||[]){if(track.mode==='showing'&&track.activeCues?.length){const cue=track.activeCues[0];key=cue.startTime+':'+cue.endTime+':'+cue.text;break}}
-  if(!key&&captionNode?.isConnected)key=captionNode.textContent.trim();
+  wireTracks();
+  let key='';
+  for(const track of video.textTracks||[]){if(track.activeCues?.length){const cue=track.activeCues[0];key=cue.startTime+':'+cue.endTime+':'+cue.text;break}}
+  if(!key){const node=[...document.querySelectorAll(captionSelector)].find(e=>e.textContent.trim()&&e.getBoundingClientRect().height>0);if(node)key=node.textContent.trim()}
   if(cueKey&&key!==cueKey)send({type:'caption-boundary'});cueKey=key;
  }
  function cleanup(){active=false;clearInterval(guard);observer?.disconnect();observer=null;video?.removeEventListener('pause',onPause);video?.removeEventListener('playing',onPlay);video?.removeEventListener('play',onPlay);if(phase==='replay'&&video){video.pause();video.playbackRate=previousRate}host?.remove();host=shadow=null;phase='off';phrase=null;wordEls=[];cueKey=''}
