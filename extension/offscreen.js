@@ -108,12 +108,21 @@ async function analyze(segment, prePaused = false) {
     saveDiag('Japanese line confirmed, pausing');
     if (!prePaused) emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
     emit({ type: 'state', phase: 'processing', message: 'Getting this line…' });
-    const built = await meta({ type: 'phrase-text', text });
+    const built = await meta({ type: 'phrase-display', text });
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
     lines = built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || ''));
     if (!lines.length) { phase = 'error'; saveDiag('could not build a line from that'); emit({ type: 'state', phase: 'error', message: 'I couldn’t make out that line.' }); return; }
     lineIndex = 0; showLine();
+    // Precise token alignment arrives just behind the display and swaps in
+    // without disturbing words already filled.
+    const shown = lines[0];
+    meta({ type: 'phrase-text', text }).then(r => {
+      if (!r || r.error || r.empty || phrase !== shown) return;
+      const full = (r.lines?.length ? r.lines : [r]).map(l => ({ ...l }));
+      const match = full.find(l => l.japanese === shown.japanese) || full[0];
+      if (match?.tokens?.length) { shown.tokens = match.tokens; emit({ type: 'phrase-tokens', tokens: match.tokens }); }
+    }).catch(() => {});
   } catch (error) { if (ticket === epoch) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('Meta error: ' + error.message); emit({ type: 'state', phase: 'error', message: error.message }); } }
 }
 async function analyzeKaraoke(segment) {

@@ -28,3 +28,23 @@ export function japaneseChars(text=''){
 export function isPauseWorthy(text='',duration=0){
  return japaneseChars(text)>=3 && duration>=0.7;
 }
+
+const KANA3={sha:'しゃ',shu:'しゅ',sho:'しょ',cha:'ちゃ',chu:'ちゅ',cho:'ちょ',chi:'ち',tsu:'つ',shi:'し',jya:'じゃ',jyu:'じゅ',jyo:'じょ',ja:'じゃ',ju:'じゅ',jo:'じょ',ji:'じ',rya:'りゃ',ryu:'りゅ',ryo:'りょ',gya:'ぎゃ',gyu:'ぎゅ',gyo:'ぎょ',kya:'きゃ',kyu:'きゅ',kyo:'きょ',nya:'にゃ',nyu:'にゅ',nyo:'にょ',hya:'ひゃ',hyu:'ひゅ',hyo:'ひょ',bya:'びゃ',byu:'びゅ',byo:'びょ',pya:'ぴゃ',pyu:'ぴゅ',pyo:'ぴょ',mya:'みゃ',myu:'みゅ',myo:'みょ'};
+const KANA2={ka:'か',ki:'き',ku:'く',ke:'け',ko:'こ',sa:'さ',su:'す',se:'せ',so:'そ',ta:'た',te:'て',to:'と',na:'な',ni:'に',nu:'ぬ',ne:'ね',no:'の',ha:'は',hi:'ひ',fu:'ふ',he:'へ',ho:'ほ',ma:'ま',mi:'み',mu:'む',me:'め',mo:'も',ya:'や',yu:'ゆ',yo:'よ',ra:'ら',ri:'り',ru:'る',re:'れ',ro:'ろ',wa:'わ',wo:'を',ga:'が',gi:'ぎ',gu:'ぐ',ge:'げ',go:'ご',za:'ざ',zu:'ず',ze:'ぜ',zo:'ぞ',da:'だ',de:'で',do:'ど',ba:'ば',bi:'び',bu:'ぶ',be:'べ',bo:'ぼ',pa:'ぱ',pi:'ぴ',pu:'ぷ',pe:'ぺ',po:'ぽ',ji:'じ'};
+const KANA1={a:'あ',i:'い',u:'う',e:'え',o:'お'};
+export function romajiToKana(word=''){
+ let s=String(word).toLowerCase().replace(/[^a-z]/g,'');let out='',i=0;
+ while(i<s.length){
+  if(s[i]==='n'&&(i===s.length-1||!'aeiouy'.includes(s[i+1]))){out+='ん';i++;continue}
+  if(s[i]===s[i+1]&&!'aeioun'.includes(s[i])){out+='っ';i++;continue}
+  const three=s.slice(i,i+3),two=s.slice(i,i+2);
+  if(KANA3[three]){out+=KANA3[three];i+=3;continue}
+  if(KANA3[two]||KANA2[two]){out+=(KANA3[two]||KANA2[two]);i+=2;continue}
+  if(KANA1[s[i]]){out+=KANA1[s[i]];i++;continue}
+  i++;
+ }
+ return out;
+}
+export function displayTokens(romaji=''){
+ return String(romaji).split(/\s+/).filter(Boolean).map(word=>({japanese:'',reading:word==='wa'?'は':word==='e'?'へ':word==='o'?'を':romajiToKana(word),romaji:word}));
+}
