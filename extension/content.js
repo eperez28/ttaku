@@ -17,6 +17,7 @@
   const card=$('card');card.style.left=((r.left||0)+width/2)+'px';
   // Practice lines sit at the top of the video; idle states keep
   // the subtitle position.
+  card.dataset.anchor=cardAnchor;
   if(cardAnchor==='top'){card.style.top=((r.top||0)+Math.max(44,height*.09))+'px';card.style.bottom='auto'}
   else{card.style.top='auto';card.style.bottom=bottom+'px'}
   card.style.maxWidth=Math.max(200,width*.9)+'px';
@@ -47,6 +48,7 @@
    .controls button:hover,.words button:hover{background:#ffffff20}
    .controls button.text{width:auto;padding:0 10px;font-size:12px;font-weight:600;white-space:nowrap}
    .details,.status{bottom:calc(100% + 43px);padding:9px 13px;border-radius:8px;background:#141414e8;backdrop-filter:blur(12px);font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff}
+   .caption[data-anchor=top] .details{bottom:auto;top:calc(100% + 8px)}
    .status:empty,.caption:has(.details:not([hidden])) .status{display:none}
    .words{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:7px}
    .words button{border:0;background:#ffffff12;border-radius:5px;font-size:12px;padding:5px 8px}
@@ -131,10 +133,10 @@
   if(m.type==='pause'){phase='processing';cardAnchor='top';mount();position();pauseAll();segmentEnd=Math.max(0,video.currentTime-(m.delaySeconds||0));segmentStart=Math.max(0,segmentEnd-m.duration);phraseURL=location.href;reply({ok:true});return}
   if(m.type==='state'){state(m.phase,m.message);return}
   if(m.type==='phrase'){
-   phrase=m.phrase;mount();showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;
+   phrase=m.phrase;mount();showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=false;
    renderWords();return;
   }
-  if(m.type==='phrase-details'){if(phrase){phrase.meaning=m.meaning;phrase.words=m.words||[];$('meaning').textContent=phrase.meaning;renderWords()}return}
+  if(m.type==='phrase-details'){if(phrase){phrase.meaning=m.meaning;phrase.words=m.words||[];$('meaning').textContent=phrase.meaning;$('details').hidden=false;renderWords()}return}
   if(m.type==='phrase-tokens'){if(phrase&&m.tokens?.length){const done=wordEls.filter(el=>el.classList.contains('done')).length;phrase.tokens=m.tokens;showWords();progress(done)}return}
   if(m.type==='word-progress'){progress(m.count);return}
   if(m.type==='result'){if(m.passed){progress(wordEls.length);state('passed')}return}

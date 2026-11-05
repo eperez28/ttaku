@@ -8,6 +8,8 @@ import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from '.
 
 let context, tabStream, micStream, sessionId, phase = 'off', phrase = null, lines = [], lineIndex = 0, tabSegments, micSegments, epoch = 0, armedAt = 0;
 let live = null, liveReady = false, liveQueue = [], liveFailed = false, liveEndTimer = null;
+let apiKeyCache = null;
+let sourceLive = null, sourceReady = false, sourceQueue = [], sourceText = '', sourceWaiter = null, sourceFailed = false;
 const emit = event => chrome.runtime.sendMessage({ target: 'worker', type: 'audio-event', sessionId, event }).catch(() => {});
 let diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() };
 let recentPeak = 0;
@@ -24,8 +26,51 @@ function saveDiag(outcome) {
   chrome.runtime.sendMessage({ target: 'worker', type: 'diag', diag: { ...diag } }).catch(() => {});
 }
 async function getApiKey() {
-  try { const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-get' }); return r?.key || null; } catch { return null; }
+  if (apiKeyCache) return apiKeyCache;
+  try { const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-get' }); apiKeyCache = r?.key || null; } catch {}
+  return apiKeyCache;
 }
+function finishSource(text) {
+  const waiter = sourceWaiter; sourceWaiter = null;
+  const ws = sourceLive; sourceLive = null; sourceReady = false; sourceQueue = [];
+  if (ws) { try { ws.close(); } catch {} }
+  if (waiter) waiter(text || sourceText || '');
+}
+function openSourceLive() {
+  if (sourceLive || sourceFailed) return;
+  sourceText = ''; sourceQueue = [];
+  if (!apiKeyCache) { sourceFailed = true; return; }
+  let ws;
+  try { ws = new WebSocket(META_WS); } catch { sourceFailed = true; return; }
+  sourceLive = ws; ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { try { ws.send(JSON.stringify(buildHandshake(apiKeyCache))); } catch {} };
+  ws.onmessage = e => {
+    if (ws !== sourceLive || typeof e.data !== 'string') return;
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (isHandshakeAck(m)) { sourceReady = true; for (const f of sourceQueue) { try { ws.send(f); } catch {} } sourceQueue = []; return; }
+    if (m.type === 'error') { sourceFailed = true; finishSource(''); return; }
+    const partial = cumulativeTranscript(m);
+    if (partial) { sourceText = partial.text; if (partial.final) finishSource(sourceText); }
+  };
+  ws.onerror = () => { sourceFailed = true; };
+  ws.onclose = () => { if (ws === sourceLive) finishSource(sourceText); };
+}
+function streamTab(chunk) {
+  if (!sourceLive || sourceFailed) return;
+  const bytes = pcm24Bytes(chunk, context.sampleRate);
+  const frame = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  if (sourceReady && sourceLive?.readyState === WebSocket.OPEN) { try { sourceLive.send(frame); } catch { sourceFailed = true; } }
+  else if (sourceQueue.length < 240) sourceQueue.push(frame);
+}
+function finalizeSourceLive() {
+  if (!sourceLive) return Promise.resolve('');
+  try { if (sourceLive.readyState === WebSocket.OPEN) sourceLive.send(JSON.stringify({ type: 'endStream' })); } catch {}
+  return new Promise(resolve => {
+    sourceWaiter = resolve;
+    setTimeout(() => { if (sourceWaiter === resolve) finishSource(sourceText); }, 2800);
+  });
+}
+function closeSourceLive() { sourceLive = null; sourceReady = false; sourceQueue = []; sourceWaiter = null; }
 const meta = message => chrome.runtime.sendMessage({ target: 'meta', ...message });
 
 async function node(stream, callback) {
@@ -90,15 +135,19 @@ function showLine() {
   }).catch(() => {});
 }
 function advance() { closeLive(); if (lineIndex + 1 < lines.length) { epoch++; lineIndex++; showLine(); } else resume(); }
-async function analyze(segment, prePaused = false) {
+async function analyze(segment, prePaused = false, liveTextPromise = null) {
   const ticket = ++epoch; phase = 'processing'; const startedAt = performance.now();
   // Fast path: one ASR call decides the pause. The romaji is built *while*
   // the video is already paused, instead of making the pause wait for it.
   try {
-    const heard = await meta({ type: 'transcribe', audioBase64: wav24Base64(segment.chunks, context.sampleRate) });
-    if (heard?.error) throw Error(heard.error);
+    let text = '';
+    if (liveTextPromise) { try { text = (await liveTextPromise || '').trim(); } catch {} }
+    if (!/[\u3040-\u30ff\u3400-\u9fff]/.test(text)) {
+      const heard = await meta({ type: 'transcribe', audioBase64: wav24Base64(segment.chunks, context.sampleRate) });
+      if (heard?.error) throw Error(heard.error);
+      text = (heard?.text || '').trim();
+    }
     if (ticket !== epoch) return;
-    const text = (heard?.text || '').trim();
     if (!isPauseWorthy(text, segment.duration)) {
       // Not a line worth stopping for: a grunt, a laugh, or a fragment.
       phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('not a pause-worthy line, letting it play');
@@ -138,10 +187,10 @@ async function check(segment) {
     else { phase = 'retry'; emit({ type: 'state', phase, message: result.heard ? 'Try that line again.' : 'I couldn’t hear you.' }); setTimeout(() => { if (ticket === epoch) listen('retry'); }, 1300); }
   } catch (error) { if (ticket === epoch) { phase = 'error'; saveDiag('repeat check failed: ' + error.message); emit({ type: 'state', phase, message: error.message }); } }
 }
-function resume() { epoch++; closeLive(); phase = 'watching'; phrase = null; lines = []; lineIndex = 0; tabSegments.reset(); micSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'resume' }); emit({ type: 'state', phase, message: '' }); }
-async function stop() { epoch++; closeLive(); phase = 'off'; for (const stream of [tabStream, micStream]) stream?.getTracks().forEach(t => t.stop()); tabStream = micStream = null; if (context) { await context.close(); context = null; } }
+function resume() { epoch++; closeLive(); closeSourceLive(); phase = 'watching'; phrase = null; lines = []; lineIndex = 0; tabSegments.reset(); micSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'resume' }); emit({ type: 'state', phase, message: '' }); }
+async function stop() { epoch++; closeLive(); closeSourceLive(); apiKeyCache = null; phase = 'off'; for (const stream of [tabStream, micStream]) stream?.getTracks().forEach(t => t.stop()); tabStream = micStream = null; if (context) { await context.close(); context = null; } }
 async function start(m) {
-  await stop(); sessionId = m.sessionId; diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; recentPeak = 0; saveDiag();
+  await stop(); sessionId = m.sessionId; apiKeyCache = null; sourceFailed = false; getApiKey(); diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; recentPeak = 0; saveDiag();
   try {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
@@ -151,10 +200,14 @@ async function start(m) {
       for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > recentPeak) recentPeak = v; }
       saveDiag();
       if (phase === 'watching' && performance.now() > armedAt) {
+        const wasStarted = tabSegments.started;
         const segment = tabSegments.push(chunk);
+        if (!wasStarted && tabSegments.started) { openSourceLive(); for (const pre of tabSegments.chunks.slice(0, -1)) streamTab(pre); }
+        if (tabSegments.started || segment) streamTab(chunk);
         if (segment) {
           diag.clips++; saveDiag('heard a clip, sending it to Meta…');
-          emit({ type: 'pause', duration: segment.duration, delaySeconds: .35 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); analyze(segment, true);
+          const liveText = finalizeSourceLive();
+          emit({ type: 'pause', duration: segment.duration, delaySeconds: .35 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); analyze(segment, true, liveText);
         }
       }
     }); tabSource.connect(context.destination);
