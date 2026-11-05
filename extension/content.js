@@ -147,7 +147,7 @@
  });
  chrome.storage.onChanged.addListener(changes=>{if(changes.showJapanese&&$('japanese'))$('japanese').hidden=!changes.showJapanese.newValue});
  // While practicing: Caps Lock switches to Phrase (or replays the phrase
- // when already there); Shift switches to Karaoke, and back when already there.
+ // when already there). Modes are otherwise picked in the popup. 
  document.addEventListener('keydown',e=>{
   if(!active||e.repeat)return;
   const target=e.target;
@@ -156,8 +156,6 @@
    e.preventDefault();
    if(mode==='phrase'){ if(phase==='watching')send({type:'phrase-repeat'}); }
    else send({type:'set-mode',mode:'phrase'});
-  } else if(e.key==='Shift'&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
-   send({type:'set-mode',mode:mode==='karaoke'?'rehearse':'karaoke'});
   }
  },true);
  document.addEventListener('fullscreenchange',()=>{if(active)mount()});window.addEventListener('resize',()=>{if(active)position()});

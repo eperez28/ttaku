@@ -94,16 +94,17 @@ async function analyzeKaraoke(segment) {
     if (ticket !== epoch || mode !== 'karaoke') return;
     const found = result.empty ? [] : compactLines(result.lines?.length ? result.lines : [result]).filter(l => l.romaji && l.reading);
     phase = 'karaoke';
-    if (found.length) { phrase = found[0]; emit({ type: 'karaoke-phrase', phrase }); openLive(); }
-  } catch { if (ticket === epoch) phase = 'karaoke'; }
+    if (found.length) { phrase = found[0]; saveDiag('karaoke line on screen'); emit({ type: 'karaoke-phrase', phrase }); openLive(); }
+    else saveDiag('karaoke: no Japanese heard in that clip');
+  } catch (error) { if (ticket === epoch) { phase = 'karaoke'; saveDiag('karaoke failed: ' + error.message); } }
 }
 async function karaokeCaption(text) {
   try {
     const result = await meta({ type: 'phrase-text', text });
     if (result?.error || result?.empty || mode !== 'karaoke') return;
     const found = compactLines(result.lines?.length ? result.lines : [result]).filter(l => l.romaji && l.reading);
-    if (found.length) { phrase = found[0]; phase = 'karaoke'; emit({ type: 'karaoke-phrase', phrase }); openLive(); }
-  } catch {}
+    if (found.length) { phrase = found[0]; phase = 'karaoke'; saveDiag('karaoke line on screen (captions)'); emit({ type: 'karaoke-phrase', phrase }); openLive(); }
+  } catch (error) { saveDiag('karaoke captions failed: ' + error.message); }
 }
 async function check(segment) {
   const ticket = ++epoch; phase = 'checking'; closeLive(true); saveDiag('heard you, checking…'); emit({ type: 'state', phase, message: '' });

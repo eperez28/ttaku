@@ -23,3 +23,5 @@ test('Caps Lock switches to Phrase from Rehearse; Shift switches back from Karao
 test('mode switch pauses while readjusting, then plays in the new mode',()=>{const h=harness();h.send({type:'start',mode:'rehearse'});h.video.paused=false;h.send({type:'mode-pause'});assert.equal(h.video.paused,true);h.send({type:'set-mode',mode:'karaoke'});assert.equal(h.video.paused,false)});
 
 test('seek-back rewinds 10s, plays, and arms the phrase capture',()=>{const h=harness();h.send({type:'start',mode:'phrase'});h.video.currentTime=42;h.video.paused=true;h.send({type:'seek-back',seconds:10});assert.equal(h.video.currentTime,32);assert.equal(h.video.paused,false);assert.equal(h.messages.at(-1).event.type,'phrase-armed')});
+
+test('karaoke shows the line at the top without pausing the video',()=>{const h=harness();h.send({type:'start',mode:'karaoke'});h.video.paused=false;h.send({type:'karaoke-phrase',phrase:{romaji:'iku zo',japanese:'行くぞ',meaning:'Let us go',tokens:[{romaji:'iku'},{romaji:'zo'}],words:[]}});assert.equal(h.video.paused,false);assert.equal(h.elements.get('romaji').children.length,2)});
