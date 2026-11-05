@@ -1,6 +1,6 @@
 (()=>{
  const VERSION='1.0.0';if(globalThis.__takuVersion===VERSION)return;globalThis.__takuVersion=VERSION;
- let active=false,video=null,host=null,shadow=null,phase='off',phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='';
+ let active=false,video=null,host=null,shadow=null,phase='off',phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
  const $=id=>shadow?.getElementById(id);
  const send=event=>chrome.runtime.sendMessage({target:'worker',type:'player-event',event}).catch(()=>{});
  const findVideo=()=>[...document.querySelectorAll('video')].filter(v=>v.getBoundingClientRect().width>100).sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0];
@@ -67,8 +67,16 @@
  function progress(count){wordEls.forEach((word,i)=>word.classList.toggle('done',i<count))}
  function state(next,message=''){
   // A clip that was not confirmed as a Japanese line (or failed before any
-  // line was shown) must never hold the video paused.
-  if((next==='empty'||next==='error')&&phase==='watching'&&!phrase)next='watching';
+  // line was shown) must never hold the video paused. But do not fail
+  // silently either: flash why (e.g. a Meta error) without pausing.
+  if((next==='empty'||next==='error')&&phase==='watching'&&!phrase){
+   phase='watching';mount();$('card').dataset.phase='watching';
+   if(next==='error'&&message&&!(message===lastNotice&&Date.now()-lastNoticeAt<30000)){
+    lastNotice=message;lastNoticeAt=Date.now();$('card').hidden=false;$('feedback').textContent=message;
+    clearTimeout(noticeTimer);noticeTimer=setTimeout(()=>{if(phase==='watching'){$('card').hidden=true;$('feedback').textContent=''}},5000);
+   } else if(next==='empty'){$('card').hidden=true;$('feedback').textContent=''}
+   return;
+  }
   phase=next;mount();$('card').hidden=['watching','off'].includes(next);$('card').dataset.phase=next;
   $('feedback').textContent=['error','empty','retry'].includes(next)?message:'';
   if($('feedback').textContent)$('details').hidden=true;

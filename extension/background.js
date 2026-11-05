@@ -48,10 +48,13 @@ async function metaFetch(path, init) {
     response = await fetch(META_BASE + path, { ...init, headers: { Authorization: 'Bearer ' + key, ...(init.headers || {}) }, signal: trackedSignal() });
   } catch (e) {
     if (generation !== keyGeneration) throw Error('The API key changed, so this request was stopped.');
-    throw Error(e.name === 'AbortError' ? 'That took too long. Check your connection and try again.' : 'Could not reach Meta. Check your connection and try again.');
+    const message = e.name === 'AbortError' ? 'That took too long. Check your connection and try again.' : 'Could not reach Meta. Check your connection and try again.';
+    chrome.storage.local.set({ lastError: message }).catch(() => {});
+    throw Error(message);
   }
   let data = null; try { data = await response.json(); } catch {}
-  if (!response.ok) throw Error(mapMetaError(response.status));
+  if (!response.ok) { const message = mapMetaError(response.status); chrome.storage.local.set({ lastError: message }).catch(() => {}); throw Error(message); }
+  chrome.storage.local.set({ lastError: '' }).catch(() => {});
   return data;
 }
 async function transcribe(audioBase64) {
