@@ -147,7 +147,7 @@ async function start(m) {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
     context = new AudioContext(); await context.resume(); await context.audioWorklet.addModule('pcm-worklet.js');
-    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 3.5, silenceSeconds: .38, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 14, silenceSeconds: .6, threshold: .018 });
+    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 7, silenceSeconds: .38, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 20, silenceSeconds: .6, threshold: .018 });
     const tabSource = await node(tabStream, chunk => {
       for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > recentPeak) recentPeak = v; }
       saveDiag();

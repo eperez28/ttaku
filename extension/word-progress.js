@@ -9,13 +9,13 @@ export function recognizedPrefix(tokens,transcript){
  }
  return count;
 }
-export function compactLines(lines,maxCharacters=38){
+export function compactLines(lines,maxCharacters=90){
  const result=[];
  for(const line of lines){
   const tokens=line.tokens?.length?line.tokens:line.romaji.split(/\s+/).filter(Boolean).map(romaji=>({romaji,japanese:'',reading:''}));
   let group=[];
   const flush=()=>{if(!group.length)return;const full=group.length===tokens.length;result.push({...line,japanese:full?line.japanese:group.map(t=>t.japanese).join(''),reading:full?line.reading:group.map(t=>t.reading).join(''),romaji:group.map(t=>t.romaji).join(' '),tokens:group});group=[]};
-  for(const token of tokens){if(group.length&&(group.map(t=>t.romaji).join(' ').length+token.romaji.length+1>maxCharacters||group.length>=6))flush();group.push(token)}flush();
+  for(const token of tokens){if(group.length&&(group.map(t=>t.romaji).join(' ').length+token.romaji.length+1>maxCharacters||group.length>=14))flush();group.push(token)}flush();
  }
  return result;
 }

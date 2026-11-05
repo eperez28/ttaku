@@ -31,7 +31,7 @@
    .caption{position:absolute;left:50%;bottom:18%;transform:translateX(-50%);width:max-content;max-width:90%;pointer-events:auto;text-align:center}
    .glass{position:relative;padding:2px 10px 4px}
    .glass::before{content:"";position:absolute;inset:-4px -10px;background:#0002;backdrop-filter:blur(7px);mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);border-radius:12px;pointer-events:none}
-   .line{position:relative;font:var(--caption-weight) 38px/1.25 var(--caption-font);white-space:nowrap;display:flex;justify-content:center;gap:.24em}
+   .line{position:relative;font:var(--caption-weight) 38px/1.3 var(--caption-font);display:flex;flex-wrap:wrap;justify-content:center;gap:.18em .24em}
    .word{position:relative;display:inline-block;white-space:pre}
    .outline{color:transparent;-webkit-text-stroke:.038em #f5f5f5;filter:drop-shadow(0 1px 2px #000) drop-shadow(0 0 1px #000)}
    .fill{position:absolute;inset:0 auto auto -3px;width:0;height:110%;overflow:hidden;transition:width 130ms ease-out;pointer-events:none}
