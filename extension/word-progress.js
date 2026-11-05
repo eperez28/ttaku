@@ -153,16 +153,44 @@ export function pickPracticeLine(lines){
 }
 
 // Everything heard in the clip is the practice text: all of its lines
-// joined into one block that wraps on screen.
+// joined into one block that wraps on screen. Pieces that restate the
+// seam (a stray first word, then the whole phrase) are merged, not doubled.
 export function combineLines(lines){
  const usable=(lines||[]).filter(l=>l&&l.romaji);
  if(!usable.length)return null;
+ const norm=s=>String(s||'').toLowerCase().replace(/[^a-z0-9\u3040-\u30ff\u3400-\u9fff]/g,'');
+ const lineTokens=usable.map(l=>l.tokens?.length?l.tokens:displayTokens(l.romaji));
+ // Drop a piece that is just the beginning of the next piece, restated.
+ const kept=[];
+ for(let i=0;i<usable.length;i++){
+  const jpHere=norm(lineTokens[i].map(tok=>tok.japanese||'').join('')||usable[i].japanese);
+  const jpNext=i+1<usable.length?norm(lineTokens[i+1].map(tok=>tok.japanese||'').join('')||usable[i+1].japanese):'';
+  if(jpHere.length>=2&&jpNext.startsWith(jpHere)&&jpNext.length>jpHere.length)continue;
+  kept.push(i);
+ }
+ const tokens=[];let firstKept=null;
+ for(const i of kept){
+  let toks=lineTokens[i];
+  // Seam overlap: if this piece starts with the words the block already
+  // ends with, those words are said once.
+  let overlap=0;
+  for(let k=Math.min(3,tokens.length,toks.length);k>=1;k--){
+   const tail=tokens.slice(-k).map(tok=>norm(tok.romaji)).join('|');
+   const head=toks.slice(0,k).map(tok=>norm(tok.romaji)).join('|');
+   if(tail&&tail===head){overlap=k;break}
+  }
+  toks=toks.slice(overlap);
+  if(!toks.length)continue;
+  if(!firstKept)firstKept=usable[i];
+  tokens.push(...toks);
+ }
+ if(!tokens.length)return null;
  return {
-  japanese:usable.map(l=>l.japanese||'').join(''),
-  reading:usable.map(l=>l.reading||'').join(''),
-  romaji:usable.map(l=>l.romaji||'').join(' '),
-  tokens:usable.flatMap(l=>l.tokens||[]),
-  words:usable[0].words||[],
+  japanese:tokens.map(tok=>tok.japanese||'').join(''),
+  reading:tokens.map(tok=>tok.reading||'').join(''),
+  romaji:tokens.map(tok=>tok.romaji).join(' '),
+  tokens,
+  words:firstKept?.words||[],
   meaning:''
  };
 }
