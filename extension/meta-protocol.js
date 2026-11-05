@@ -198,6 +198,12 @@ export function isSilentClip(bytes) {
 export function sanitizeServerMessage(message) {
   return String(message || '').replace(/Bearer\s+\S+/gi, '').replace(/[A-Za-z0-9_\-]{32,}/g, '[redacted]').slice(0, 180).trim();
 }
+export function parseTurns(data) {
+  if (!Array.isArray(data?.turns)) return [];
+  return data.turns
+    .map(tn => ({ speaker: typeof tn?.speaker === 'string' ? tn.speaker : '', text: typeof tn?.transcript === 'string' ? tn.transcript.trim() : '' }))
+    .filter(tn => tn.text);
+}
 export function extractTranscript(data) {
   if (typeof data?.transcript === 'string') return data.transcript.trim();
   if (Array.isArray(data?.turns)) return data.turns.map(t => t.transcript || '').join(' ').trim();

@@ -130,14 +130,35 @@ async function acceptLive() {
   setTimeout(() => { if (ticket === epoch) advance(); }, 500);
 }
 function listen(phaseName = 'listening') { phase = 'listening'; micSegments.reset(); armedAt = performance.now() + 450; saveDiag('paused, waiting for you to repeat it'); emit({ type: 'word-progress', count: 0 }); emit({ type: 'state', phase: phaseName, message: '' }); openLive(); clearTimeout(helpTimer); helpTimer = setTimeout(() => { if (phase === 'listening') emit({ type: 'struggle-help' }); }, 12000); }
-function showLine() {
+async function ensureBuiltLine(index) {
+  const item = lines[index]; if (!item) return null;
+  if (!item.pendingTurn) return item;
+  const turnText = item.pendingTurn;
+  const built = await meta({ type: 'phrase-display', text: turnText }).catch(() => null);
+  if (!built || built.error || built.empty) return null;
+  const builtLines = compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(punctuateLine);
+  if (!builtLines.length) return null;
+  lines.splice(index, 1, ...builtLines);
+  const target = lines[index];
+  meta({ type: 'phrase-text', text: turnText }).then(r => {
+    if (!r || r.error || r.empty || phrase !== target) return;
+    const full = (r.lines?.length ? r.lines : [r]);
+    const match = full.find(l => l.japanese === target.japanese) || full[0];
+    if (match?.tokens?.length) { target.tokens = match.tokens; if (match.reading) target.reading = match.reading; emit({ type: 'phrase-tokens', tokens: match.tokens }); }
+  }).catch(() => {});
+  return target;
+}
+async function showLine() {
+  let current = await ensureBuiltLine(lineIndex);
+  while (!current && lineIndex + 1 < lines.length) { lineIndex++; current = await ensureBuiltLine(lineIndex); }
+  if (!current) { resume(); return; }
   phrase = lines[lineIndex]; emit({ type: 'phrase', phrase, lineIndex, lineCount: lines.length }); listen();
   const shown = phrase;
   meta({ type: 'phrase-enrich', japanese: shown.japanese, romaji: shown.romaji }).then(r => {
     if (r && !r.error && phrase === shown) { shown.meaning = r.meaning || ''; shown.words = r.words || []; emit({ type: 'phrase-details', meaning: shown.meaning, words: shown.words }); }
   }).catch(() => {});
 }
-function advance() { closeLive(); if (lineIndex + 1 < lines.length) { epoch++; lineIndex++; showLine(); } else resume(); }
+async function advance() { closeLive(); if (lineIndex + 1 < lines.length) { epoch++; lineIndex++; await showLine(); } else resume(); }
 async function analyze(segment, prePaused = false, liveTextPromise = null) {
   const ticket = ++epoch; phase = 'processing'; const startedAt = performance.now();
   // Fast path: one ASR call decides the pause. The romaji is built *while*
@@ -164,6 +185,20 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     saveDiag('Japanese line confirmed, pausing');
     if (!prePaused) emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
     emit({ type: 'state', phase: 'processing', message: 'Getting this line…' });
+    // A clip that may hold more than one speaker gets diarized first, and
+    // each speaker's turn becomes its own practice line — never a blend.
+    const jpChars = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
+    const multiClue = segment.duration > 4 || jpChars > 24 || (text.match(/[。！？]/g) || []).length >= 2;
+    if (multiClue) {
+      let turns = null;
+      try { const d = await meta({ type: 'diarize', audioBase64: wav24Base64(segment.chunks, context.sampleRate) }); if (d && !d.error && Array.isArray(d.turns)) turns = d.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)); } catch {}
+      if (ticket !== epoch) return;
+      if (turns && turns.length >= 2) {
+        lines = turns.map(tn => ({ pendingTurn: tn.text, speaker: tn.speaker || '', japanese: '', reading: '', romaji: '', tokens: [], words: [], meaning: '' }));
+        lineIndex = 0; saveDiag('split into ' + turns.length + ' speaker turns');
+        await showLine(); return;
+      }
+    }
     activeDisplay = { id: ticket, lines: [], shown: false };
     const built = await meta({ type: 'phrase-display-stream', text, streamId: ticket }).catch(e => ({ error: e.message }));
     const streamed = activeDisplay; activeDisplay = null;

@@ -3,7 +3,7 @@
 // pages cannot read it), is read here on demand, and is never sent to
 // content scripts, pages, or logs. It persists across Chrome restarts and
 // extension reloads until the user clears it in the popup.
-import { META_BASE, TEXT_MODEL, ASR_MODEL, PHRASE_SCHEMA, PHRASE_FAST_SCHEMA, PHRASE_FAST_INSTRUCTIONS, PHRASE_DISPLAY_SCHEMA, PHRASE_DISPLAY_INSTRUCTIONS, extractDisplayLines, ENRICH_SCHEMA, validateFastPhraseOutput, validateEnrichOutput, READING_SCHEMA, PHRASE_INSTRUCTIONS, READING_INSTRUCTIONS, responsesBody, extractResponsesText, responseProblem, responseShape, parseEventStream, isSilentClip, sanitizeServerMessage, extractTranscript, transcribeRequest, validatePhraseOutput, validateReadingOutput, mapMetaError } from './meta-protocol.js';
+import { META_BASE, TEXT_MODEL, ASR_MODEL, PHRASE_SCHEMA, PHRASE_FAST_SCHEMA, PHRASE_FAST_INSTRUCTIONS, PHRASE_DISPLAY_SCHEMA, PHRASE_DISPLAY_INSTRUCTIONS, extractDisplayLines, ENRICH_SCHEMA, validateFastPhraseOutput, validateEnrichOutput, READING_SCHEMA, PHRASE_INSTRUCTIONS, READING_INSTRUCTIONS, responsesBody, extractResponsesText, responseProblem, responseShape, parseEventStream, isSilentClip, sanitizeServerMessage, extractTranscript, parseTurns, transcribeRequest, validatePhraseOutput, validateReadingOutput, mapMetaError } from './meta-protocol.js';
 import { base64ToBytes } from './audio-utils.js';
 import { displayTokens } from './word-progress.js';
 
@@ -66,12 +66,20 @@ async function metaFetch(path, init) {
   chrome.storage.local.set({ lastError: '' }).catch(() => {});
   return data;
 }
-async function transcribeOnce(bytes, mode) {
+async function transcribeData(bytes, mode) {
   const form = new FormData();
   form.set('request', new Blob([JSON.stringify(transcribeRequest(mode))], { type: 'application/json' }));
   form.set('audio', new Blob([bytes], { type: 'audio/wav' }), 'clip.wav');
-  const data = await metaFetch('/asr/transcribe', { method: 'POST', headers: { Accept: 'application/json' }, body: form });
-  return extractTranscript(data);
+  return metaFetch('/asr/transcribe', { method: 'POST', headers: { Accept: 'application/json' }, body: form });
+}
+async function transcribeOnce(bytes, mode) {
+  return extractTranscript(await transcribeData(bytes, mode));
+}
+async function diarize(audioBase64) {
+  if (typeof audioBase64 !== 'string' || audioBase64.length > 6000000) return { turns: [] };
+  const bytes = base64ToBytes(audioBase64);
+  if (isSilentClip(bytes)) return { turns: [] };
+  return { turns: parseTurns(await transcribeData(bytes, 'DIARIZATION')) };
 }
 async function transcribe(audioBase64) {
   if (typeof audioBase64 !== 'string' || audioBase64.length > 6000000) throw Error('That clip is too long. Try a shorter line.');
@@ -227,6 +235,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       if (m.type === 'phrase-enrich') return enrichLine(m.japanese, m.romaji);
       if (m.type === 'phrase-display') return phraseDisplayFromText(m.text);
       if (m.type === 'phrase-display-stream') return phraseDisplayStream(m.text, m.streamId);
+      if (m.type === 'diarize') return diarize(m.audioBase64);
       return;
     }
     if (m.target !== 'worker') return;
