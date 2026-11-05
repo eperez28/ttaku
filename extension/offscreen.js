@@ -2,7 +2,7 @@
 // Meta realtime stream. HTTP Meta calls are delegated to the service worker;
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
-import { recognizedPrefix, compactLines, isPauseWorthy } from './word-progress.js';
+import { recognizedPrefix, recognizedMatches, compactLines, isPauseWorthy } from './word-progress.js';
 import { matchReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
@@ -99,11 +99,12 @@ async function openLive() {
     if (isHandshakeAck(m)) { liveReady = true; for (const frame of liveQueue) { try { ws.send(frame); } catch {} } liveQueue = []; return; }
     if (m.type === 'error') { liveFailed = true; closeLive(); return; }
     const partial = cumulativeTranscript(m);
-    // Each cumulative partial replaces the last one; feed it straight to matching.
+    // Each cumulative partial replaces the last one; fill every word it
+    // matches, even if an earlier word was misheard.
     if (partial && phrase && ['listening', 'checking'].includes(phase)) {
-      const count = recognizedPrefix(phrase.tokens || [], partial.text);
-      emit({ type: 'word-progress', count });
-      if (phase === 'listening' && phrase.tokens?.length && count >= phrase.tokens.length) acceptLive();
+      const { mask, partial: part } = recognizedMatches(phrase.tokens || [], partial.text);
+      emit({ type: 'word-progress', count: mask.filter(Boolean).length, mask, part });
+      if (phase === 'listening' && mask.length && mask.every(Boolean)) acceptLive();
     }
   };
   ws.onerror = () => { liveFailed = true; };
@@ -213,9 +214,8 @@ async function start(m) {
     }); tabSource.connect(context.destination);
     await node(micStream, chunk => {
       if (phase !== 'listening' || performance.now() < armedAt) return;
-      const started = micSegments.started, segment = micSegments.push(chunk);
-      if (!started && micSegments.started) { for (const pre of micSegments.chunks.slice(0, -1)) streamMic(pre); }
-      if (started || micSegments.started || segment) streamMic(chunk);
+      streamMic(chunk);
+      const segment = micSegments.push(chunk);
       if (segment) check(segment);
     });
     tabStream.getAudioTracks().forEach(t => t.onended = () => { stop(); emit({ type: 'state', phase: 'error', message: 'Tab sharing ended. Restart Ttaku to reconnect.' }); });

@@ -77,7 +77,15 @@
   for(const token of tokens){const word=document.createElement('span');word.className='word';const outline=document.createElement('span');outline.className='outline';outline.textContent=token.romaji;const fill=document.createElement('span');fill.className='fill';fill.setAttribute('aria-hidden','true');const ink=document.createElement('span');ink.className='ink';ink.textContent=token.romaji;fill.append(ink);word.append(outline,fill);$('romaji').append(word);wordEls.push(word)}
   $('romaji').setAttribute('aria-label',phrase.romaji);position();
  }
- function progress(count){wordEls.forEach((word,i)=>word.classList.toggle('done',i<count))}
+ function progress(count,mask,part){
+  wordEls.forEach((word,i)=>{
+   const fill=word.querySelector?.('.fill');
+   if(mask){
+    const on=!!mask[i];word.classList.toggle('done',on);
+    if(fill)fill.style.width=on?'':(part&&part.index===i?Math.round(part.ratio*100)+'%':'');
+   } else word.classList.toggle('done',i<count);
+  });
+ }
  function state(next,message=''){
   // A clip that was not confirmed as a Japanese line (or failed before any
   // line was shown) must never hold the video paused. But do not fail
@@ -138,7 +146,7 @@
   }
   if(m.type==='phrase-details'){if(phrase){phrase.meaning=m.meaning;phrase.words=m.words||[];$('meaning').textContent=phrase.meaning;$('details').hidden=false;renderWords()}return}
   if(m.type==='phrase-tokens'){if(phrase&&m.tokens?.length){const done=wordEls.filter(el=>el.classList.contains('done')).length;phrase.tokens=m.tokens;showWords();progress(done)}return}
-  if(m.type==='word-progress'){progress(m.count);return}
+  if(m.type==='word-progress'){progress(m.count,m.mask,m.part);return}
   if(m.type==='result'){if(m.passed){progress(wordEls.length);state('passed')}return}
   if(m.type==='resume'){phase='watching';cueKey='';video.playbackRate=previousRate;video.play().catch(()=>state('error','Press Play to continue.'));return}
 

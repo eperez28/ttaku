@@ -1,4 +1,4 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import {recognizedPrefix,compactLines,isPauseWorthy,romajiToKana,displayTokens} from '../extension/word-progress.js';
+import {test} from 'node:test';import assert from 'node:assert/strict';import {recognizedPrefix,compactLines,isPauseWorthy,romajiToKana,displayTokens,recognizedMatches} from '../extension/word-progress.js';
 const tokens=[{japanese:'大丈夫',reading:'だいじょうぶ',romaji:'daijoubu'},{japanese:'です',reading:'です',romaji:'desu'},{japanese:'か',reading:'か',romaji:'ka?'}];
 test('partial recognition fills only complete words in order',()=>{assert.equal(recognizedPrefix(tokens,'大'),0);assert.equal(recognizedPrefix(tokens,'大丈夫'),1);assert.equal(recognizedPrefix(tokens,'大丈夫です'),2);assert.equal(recognizedPrefix(tokens,'大丈夫ですか？'),3)});
 test('kana transcription also matches the target reading',()=>assert.equal(recognizedPrefix(tokens,'ダイジョウブです'),2));
@@ -8,3 +8,6 @@ test('long source phrases split into single short lines without losing tokens',(
 test('only real lines earn a pause: grunts and fragments play through',()=>{assert.equal(isPauseWorthy('うん',1.2),false);assert.equal(isPauseWorthy('行くぞ',0.4),false);assert.equal(isPauseWorthy('ありがとう',0.3),false);assert.equal(isPauseWorthy('海賊狩りのゾロ',2.1),true);assert.equal(isPauseWorthy('thank you',2.1),false)});
 
 test('romaji converts to kana for instant display tokens',()=>{assert.equal(romajiToKana('daijoubu'),'だいじょうぶ');assert.equal(romajiToKana('kaizoku'),'かいぞく');assert.equal(romajiToKana('gakkou'),'がっこう');const toks=displayTokens('boku wa iku');assert.equal(toks[1].reading,'は');assert.equal(toks[2].reading,'いく')});
+
+test('fill lights each word you actually said, even after a misheard word',()=>{const {mask}=recognizedMatches(tokens,'大丈夫ですか');assert.deepEqual(mask,[true,true,true]);const mid=recognizedMatches(tokens,'大丈夫です');assert.deepEqual(mid.mask,[true,true,false]);const again=recognizedMatches(tokens,'大丈夫ですか？');assert.deepEqual(again.mask,[true,true,true])});
+test('a half-spoken next word reports a partial fill',()=>{const {mask,partial}=recognizedMatches(tokens,'大丈夫で');assert.deepEqual(mask,[true,false,false]);assert.equal(partial.index,1);assert.ok(partial.ratio>0&&partial.ratio<1)});

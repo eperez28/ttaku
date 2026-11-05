@@ -48,3 +48,22 @@ export function romajiToKana(word=''){
 export function displayTokens(romaji=''){
  return String(romaji).split(/\s+/).filter(Boolean).map(word=>({japanese:'',reading:word==='wa'?'は':word==='e'?'へ':word==='o'?'を':romajiToKana(word),romaji:word}));
 }
+
+export function recognizedMatches(tokens,transcript){
+ const heard=cleanJapanese(transcript);const mask=[];let pos=0,partial=null;
+ for(const token of tokens){
+  const cands=[cleanJapanese(token.japanese||token.text||''),cleanJapanese(token.reading||'')].filter(Boolean);
+  let idx=-1,len=0;
+  for(const cand of cands){const i=heard.indexOf(cand,pos);if(i>=0&&i-pos<=8&&(idx<0||i<idx)){idx=i;len=cand.length}}
+  if(idx>=0){mask.push(true);pos=idx+len}else mask.push(false);
+ }
+ for(let i=0;i<tokens.length;i++){
+  if(mask[i])continue;
+  const rest=heard.slice(pos);
+  const cands=[cleanJapanese(tokens[i].japanese||tokens[i].text||''),cleanJapanese(tokens[i].reading||'')].filter(Boolean);
+  const hit=cands.find(cand=>cand.length>rest.length&&cand.startsWith(rest)&&rest.length>=1);
+  if(hit)partial={index:i,ratio:rest.length/hit.length};
+  break;
+ }
+ return {mask,partial};
+}
