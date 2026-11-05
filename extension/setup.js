@@ -61,7 +61,7 @@ async function load() {
   if (stored.diag) {
     const ago = Math.max(0, Math.round((Date.now() - (stored.diag.at || 0)) / 1000));
     $('helper').hidden = false;
-    $('helper').textContent = 'Sound check — loudest heard: ' + (stored.diag.peak || 0).toFixed(2) + ' · clips sent: ' + (stored.diag.clips || 0) + ' · last: ' + (stored.diag.outcome || '') + ' (' + ago + 's ago)';
+    $('helper').textContent = 'Sound check — level now: ' + (stored.diag.rms || 0).toFixed(3) + ' · cutter: ' + (stored.diag.armed === false ? 'disarmed (player paused?)' : stored.diag.started ? 'hearing speech' : 'waiting for speech') + ' · clips sent: ' + (stored.diag.clips || 0) + ' · last: ' + (stored.diag.outcome || '') + ' (' + ago + 's ago)';
   }
   updateStart();
 }

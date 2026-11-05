@@ -6,11 +6,13 @@ export function wavBase64(chunks,rate){
   let s='';for(let i=0;i<bytes.length;i+=8192)s+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(s);
 }
 export class Segmenter {
-  constructor(rate,{maxSeconds=7,silenceSeconds=0.65,threshold=0.012}={}){this.rate=rate;this.maxSeconds=maxSeconds;this.silenceSeconds=silenceSeconds;this.threshold=threshold;this.reset()}
+  constructor(rate,{maxSeconds=7,silenceSeconds=0.65,threshold=0.012,peakThreshold=0.06}={}){this.rate=rate;this.maxSeconds=maxSeconds;this.silenceSeconds=silenceSeconds;this.threshold=threshold;this.peakThreshold=peakThreshold;this.lastRms=0;this.reset()}
   reset(){this.pre=[];this.chunks=[];this.started=false;this.silence=0;this.total=0;this.voiced=0}
   push(chunk){
-    let sum=0;for(const x of chunk)sum+=x*x;const rms=Math.sqrt(sum/chunk.length),dt=chunk.length/this.rate;
-    const speech=rms>this.threshold;
+    let sum=0,peak=0;for(const x of chunk){sum+=x*x;const v=Math.abs(x);if(v>peak)peak=v}const rms=Math.sqrt(sum/chunk.length),dt=chunk.length/this.rate;this.lastRms=rms;
+    // Quiet dialogue can sit under an RMS threshold while still peaking
+    // clearly; either signal counts as speech.
+    const speech=rms>this.threshold||peak>this.peakThreshold;
     if(!this.started){this.pre.push(chunk);if(this.pre.length>Math.ceil(this.rate*0.25/chunk.length))this.pre.shift();if(!speech)return null;this.started=true;this.chunks=[...this.pre];this.pre=[]}
     else this.chunks.push(chunk);
     this.total+=dt;this.silence=speech?0:this.silence+dt;if(speech)this.voiced+=dt;

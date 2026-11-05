@@ -9,10 +9,14 @@ import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from '.
 let context, tabStream, micStream, sessionId, phase = 'off', phrase = null, lines = [], lineIndex = 0, tabSegments, micSegments, epoch = 0, armedAt = 0;
 let live = null, liveReady = false, liveQueue = [], liveFailed = false, liveEndTimer = null;
 const emit = event => chrome.runtime.sendMessage({ target: 'worker', type: 'audio-event', sessionId, event }).catch(() => {});
-let diag = { peak: 0, clips: 0, outcome: 'waiting to hear the video', at: Date.now() };
+let diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() };
+let recentPeak = 0;
 let diagSavedAt = 0;
 function saveDiag(outcome) {
   if (outcome) diag.outcome = outcome;
+  diag.peak = recentPeak; recentPeak = 0;
+  if (tabSegments) { diag.rms = tabSegments.lastRms || 0; diag.started = !!tabSegments.started; }
+  diag.armed = performance.now() > armedAt;
   diag.at = Date.now();
   if (diag.at - diagSavedAt < 800) return;
   diagSavedAt = diag.at;
@@ -96,15 +100,15 @@ async function check(segment) {
 function resume() { epoch++; closeLive(); phase = 'watching'; phrase = null; lines = []; lineIndex = 0; tabSegments.reset(); micSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'resume' }); emit({ type: 'state', phase, message: '' }); }
 async function stop() { epoch++; closeLive(); phase = 'off'; for (const stream of [tabStream, micStream]) stream?.getTracks().forEach(t => t.stop()); tabStream = micStream = null; if (context) { await context.close(); context = null; } }
 async function start(m) {
-  await stop(); sessionId = m.sessionId; diag = { peak: 0, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; saveDiag();
+  await stop(); sessionId = m.sessionId; diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; recentPeak = 0; saveDiag();
   try {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
     context = new AudioContext(); await context.resume(); await context.audioWorklet.addModule('pcm-worklet.js');
-    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 3.5, silenceSeconds: .38 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 14, silenceSeconds: .85, threshold: .018 });
+    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 3.5, silenceSeconds: .38, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 14, silenceSeconds: .85, threshold: .018 });
     const tabSource = await node(tabStream, chunk => {
-      for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > diag.peak) diag.peak = v; }
-      if (diag.peak > 0) saveDiag();
+      for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > recentPeak) recentPeak = v; }
+      saveDiag();
       if (phase === 'watching' && performance.now() > armedAt) { const segment = tabSegments.push(chunk); if (segment) { diag.clips++; saveDiag('heard a clip, sending it to Meta…'); analyze(segment); } }
     }); tabSource.connect(context.destination);
     await node(micStream, chunk => {
