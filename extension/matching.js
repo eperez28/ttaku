@@ -10,5 +10,5 @@ export function matchReading(expected, actual) {
   const a = normalizeReading(expected), b = normalizeReading(actual);
   if (!a || !b) return { passed: false, similarity: 0 };
   const similarity = Math.max(0, 1 - distance(a, b) / Math.max(a.length, b.length));
-  return { passed: a.length <= 5 ? a === b : similarity >= 0.85, similarity: Math.round(similarity * 100) };
+  return { passed: a.length <= 5 ? a === b : similarity >= 0.8, similarity: Math.round(similarity * 100) };
 }

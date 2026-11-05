@@ -19,7 +19,7 @@
   if(cardAnchor==='top'){card.style.top=((r.top||0)+Math.max(44,height*.09))+'px';card.style.bottom='auto'}
   else{card.style.top='auto';card.style.bottom=bottom+'px'}
   card.style.maxWidth=Math.max(200,width*.9)+'px';
-  let size=Math.min(48,Math.max(22,height*.05));$('romaji').style.fontSize=size+'px';
+  let size=Math.min(32,Math.max(17,height*.034));$('romaji').style.fontSize=size+'px';
   const measured=$('romaji').scrollWidth;if(measured>width*.87)$('romaji').style.fontSize=Math.max(16,size*(width*.87)/measured)+'px';
  }
  function mount(){
@@ -92,7 +92,12 @@
   if(next==='watching'){phrase=null;cardAnchor='bottom';$('details').hidden=true;wordEls=[]}
  }
  function onPause(){if(active&&phase==='watching')send({type:'video-paused'})}
- function onPlay(){if(active&&phase==='watching')send({type:'video-playing'})}
+ function onPlay(){
+  if(!active)return;
+  if(phase==='watching'){send({type:'video-playing'});return}
+  // The user pressed Play themselves: skip this line and keep watching.
+  if(['listening','checking','retry','error','processing','passed'].includes(phase)){state('watching');send({type:'user-continue'})}
+ }
  const sentCues=new Set();
  function checkKaraokeCues(){
   if(!active||mode!=='karaoke')return;
@@ -113,15 +118,15 @@
   if(!key&&captionNode?.isConnected)key=captionNode.textContent.trim();
   if(cueKey&&key!==cueKey)send({type:'caption-boundary'});cueKey=key;
  }
- function cleanup(){active=false;clearInterval(guard);observer?.disconnect();observer=null;video?.removeEventListener('pause',onPause);video?.removeEventListener('playing',onPlay);if(phase==='replay'&&video){video.pause();video.playbackRate=previousRate}host?.remove();host=shadow=null;phase='off';phrase=null;wordEls=[];cueKey=''}
+ function cleanup(){active=false;clearInterval(guard);observer?.disconnect();observer=null;video?.removeEventListener('pause',onPause);video?.removeEventListener('playing',onPlay);video?.removeEventListener('play',onPlay);if(phase==='replay'&&video){video.pause();video.playbackRate=previousRate}host?.remove();host=shadow=null;phase='off';phrase=null;wordEls=[];cueKey=''}
  chrome.runtime.onMessage.addListener((m,sender,reply)=>{
   if(m.target!=='player')return;
   if(m.type==='probe'){if(findVideo())reply({video:true,version:VERSION});return}
   if(m.type==='start'){
-   if(!findVideo())return;cleanup();video=findVideo();active=true;mode=m.mode||'rehearse';state(mode==='karaoke'?'karaoke':'watching');video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay);
+   if(!findVideo())return;cleanup();video=findVideo();active=true;mode=m.mode||'rehearse';state(mode==='karaoke'?'karaoke':'watching');video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay);video.addEventListener('play',onPlay);
    guard=setInterval(()=>{
     if(!active)return;
-    if(!video.isConnected){const fresh=findVideo();if(fresh&&fresh!==video){video.removeEventListener('pause',onPause);video.removeEventListener('playing',onPlay);video=fresh;video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay)}else if(!fresh){cleanup();chrome.runtime.sendMessage({target:'worker',type:'stop'});return}}
+    if(!video.isConnected){const fresh=findVideo();if(fresh&&fresh!==video){video.removeEventListener('pause',onPause);video.removeEventListener('playing',onPlay);video.removeEventListener('play',onPlay);video=fresh;video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay);video.addEventListener('play',onPlay)}else if(!fresh){cleanup();chrome.runtime.sendMessage({target:'worker',type:'stop'});return}}
     if(phase==='replay'&&video.currentTime>=replayEnd){video.pause();video.playbackRate=previousRate;phase='listening';send({type:'replay-ended'})}
     else if(!['watching','replay','off','karaoke'].includes(phase))pauseAll();
     checkCue();checkKaraokeCues();

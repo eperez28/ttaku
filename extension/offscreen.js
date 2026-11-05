@@ -55,7 +55,11 @@ async function openLive() {
     if (m.type === 'error') { liveFailed = true; closeLive(); return; }
     const partial = cumulativeTranscript(m);
     // Each cumulative partial replaces the last one; feed it straight to matching.
-    if (partial && phrase && ['listening', 'checking', 'karaoke'].includes(phase)) emit({ type: 'word-progress', count: recognizedPrefix(phrase.tokens || [], partial.text) });
+    if (partial && phrase && ['listening', 'checking', 'karaoke'].includes(phase)) {
+      const count = recognizedPrefix(phrase.tokens || [], partial.text);
+      emit({ type: 'word-progress', count });
+      if (phase === 'listening' && phrase.tokens?.length && count >= phrase.tokens.length) acceptLive();
+    }
   };
   ws.onerror = () => { liveFailed = true; };
   ws.onclose = () => { if (ws === live) { live = null; liveReady = false; liveQueue = []; } };
@@ -68,21 +72,37 @@ function streamMic(chunk) {
   if (liveReady && live?.readyState === WebSocket.OPEN) { try { live.send(frame); } catch { liveFailed = true; } }
   else if (liveQueue.length < 200) liveQueue.push(frame);
 }
+async function acceptLive() {
+  if (phase !== 'listening' || !phrase) return;
+  const ticket = ++epoch; phase = 'passed'; closeLive(); micSegments?.reset();
+  saveDiag('repeat accepted (live), playing again');
+  emit({ type: 'result', passed: true, heard: '', similarity: 100 });
+  emit({ type: 'word-progress', count: phrase.tokens?.length || 100 });
+  await chrome.runtime.sendMessage({ target: 'worker', type: 'passed', words: (phrase.words?.length ? phrase.words : (phrase.tokens || []).map(tok => ({ japanese: tok.japanese || '', reading: tok.reading || '', romaji: tok.romaji || '', meaning: '' }))) }).catch(() => {});
+  setTimeout(() => { if (ticket === epoch) advance(); }, 500);
+}
 function listen(phaseName = 'listening') { phase = 'listening'; micSegments.reset(); armedAt = performance.now() + 450; saveDiag('paused, waiting for you to repeat it'); emit({ type: 'word-progress', count: 0 }); emit({ type: 'state', phase: phaseName, message: '' }); openLive(); }
 function showLine() { phrase = lines[lineIndex]; emit({ type: 'phrase', phrase, lineIndex, lineCount: lines.length }); listen(); }
 function advance() { closeLive(); if (lineIndex + 1 < lines.length) { epoch++; lineIndex++; showLine(); } else resume(); }
 async function analyze(segment) {
   const ticket = ++epoch; phase = 'processing'; const startedAt = performance.now();
-  // Do NOT pause yet: any tab audio (music, effects, other languages) makes a
-  // segment. The video only pauses below, after Meta transcribes the clip and
-  // the phrase pipeline confirms it is a usable Japanese line.
+  // Fast path: one ASR call decides the pause. The romaji is built *while*
+  // the video is already paused, instead of making the pause wait for it.
   try {
-    const result = await meta({ type: 'phrase', audioBase64: wav24Base64(segment.chunks, context.sampleRate) });
-    if (result?.error) throw Error(result.error);
+    const heard = await meta({ type: 'transcribe', audioBase64: wav24Base64(segment.chunks, context.sampleRate) });
+    if (heard?.error) throw Error(heard.error);
     if (ticket !== epoch) return;
-    lines = result.empty ? [] : compactLines(result.lines?.length ? result.lines : [result]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || ''));
-    if (!lines.length) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('Meta heard no Japanese line in that clip'); emit({ type: 'state', phase: 'empty', message: '' }); return; }
-    saveDiag('Japanese line confirmed, pausing'); lineIndex = 0; emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); showLine();
+    const text = (heard?.text || '').trim();
+    if (!text || !/[\u3040-\u30ff\u3400-\u9fff]/.test(text)) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('Meta heard no Japanese line in that clip'); emit({ type: 'state', phase: 'empty', message: '' }); return; }
+    saveDiag('Japanese line confirmed, pausing');
+    emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
+    emit({ type: 'state', phase: 'processing', message: 'Getting this line…' });
+    const built = await meta({ type: 'phrase-text', text });
+    if (built?.error) throw Error(built.error);
+    if (ticket !== epoch) return;
+    lines = built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || ''));
+    if (!lines.length) { phase = 'error'; saveDiag('could not build a line from that'); emit({ type: 'state', phase: 'error', message: 'I couldn’t make out that line.' }); return; }
+    lineIndex = 0; showLine();
   } catch (error) { if (ticket === epoch) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('Meta error: ' + error.message); emit({ type: 'state', phase: 'error', message: error.message }); } }
 }
 async function analyzeKaraoke(segment) {
@@ -127,7 +147,7 @@ async function start(m) {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
     context = new AudioContext(); await context.resume(); await context.audioWorklet.addModule('pcm-worklet.js');
-    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 3.5, silenceSeconds: .38, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 14, silenceSeconds: .85, threshold: .018 });
+    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 3.5, silenceSeconds: .38, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 14, silenceSeconds: .6, threshold: .018 });
     const tabSource = await node(tabStream, chunk => {
       for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > recentPeak) recentPeak = v; }
       saveDiag();
@@ -159,6 +179,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (m.type === 'start') return start(m);
     if (m.type === 'stop') { await stop(); return { ok: true }; }
     if (m.sessionId && m.sessionId !== sessionId) return;
+    if (m.type === 'user-continue') { epoch++; closeLive(); resume(); return { ok: true }; }
     if (m.type === 'skip') { epoch++; if (phrase) advance(); else resume(); return { ok: true }; }
     if (m.type === 'retry' && phrase) { epoch++; listen('listening'); return { ok: true }; }
     if (m.type === 'replay' && phrase) { epoch++; closeLive(); phase = 'replay'; emit({ type: 'replay' }); return { ok: true }; }

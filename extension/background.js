@@ -78,13 +78,7 @@ async function transcribe(audioBase64) {
   if (bytes.length < 48 || String.fromCharCode(...bytes.subarray(0, 4)) !== 'RIFF') throw Error('A WAV audio clip is required.');
   if (isSilentClip(bytes)) return '';
   // NOTE: no expected answer is ever included in an ASR request.
-  let text = await transcribeOnce(bytes, 'PUSH_TO_TALK');
-  if (!text) {
-    // Our windows are cut by silence, not by sentence: they can hold a
-    // partial line, music, or two speakers. Like the original Taku's
-    // whole-clip transcription, ENDPOINTING lets Meta find the turns inside.
-    try { text = await transcribeOnce(bytes, 'ENDPOINTING'); } catch {}
-  }
+  const text = await transcribeOnce(bytes, 'PUSH_TO_TALK');
   chrome.storage.local.set({ metaDiag: 'heard: ' + (text || '(nothing)').slice(0, 80) }).catch(() => {});
   return text;
 }
@@ -178,6 +172,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       if (m.type === 'phrase') return phrase(m.audioBase64);
       if (m.type === 'attempt-reading') return attemptReading(m.audioBase64);
       if (m.type === 'phrase-text') return phraseFromText(m.text);
+      if (m.type === 'transcribe') return { text: await transcribe(m.audioBase64) };
       return;
     }
     if (m.target !== 'worker') return;
