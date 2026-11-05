@@ -194,7 +194,7 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
       try { const d = await meta({ type: 'diarize', audioBase64: wav24Base64(segment.chunks, context.sampleRate) }); if (d && !d.error && Array.isArray(d.turns)) turns = d.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)); } catch {}
       if (ticket !== epoch) return;
       if (turns && turns.length >= 2) {
-        lines = turns.map(tn => ({ pendingTurn: tn.text, speaker: tn.speaker || '', japanese: '', reading: '', romaji: '', tokens: [], words: [], meaning: '' }));
+        lines = turns.slice(0, 1).map(tn => ({ pendingTurn: tn.text, speaker: tn.speaker || '', japanese: '', reading: '', romaji: '', tokens: [], words: [], meaning: '' }));
         lineIndex = 0; saveDiag('split into ' + turns.length + ' speaker turns');
         await showLine(); return;
       }
@@ -206,13 +206,10 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
     lines = built?.error && streamed?.shown ? streamed.lines : built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(punctuateLine);
-    if (!streamed?.shown) lines = mergeRepeats(lines);
+    if (!streamed?.shown) lines = mergeRepeats(lines).slice(0, 1);
     if (streamed?.shown && phrase) {
-      // Lines already on screen stay; adopt the final list as the queue,
-      // keeping the exact object the user is looking at.
-      const current = phrase;
-      const idx = lines.findIndex(l => l.japanese === current.japanese);
-      if (idx >= 0) { lines[idx] = current; lineIndex = idx; } else lineIndex = 0;
+      // One line per pause: whatever is on screen is the whole pause.
+      lines = [phrase]; lineIndex = 0;
     }
     if (!lines.length) { phase = 'error'; saveDiag('could not build a line from that'); emit({ type: 'state', phase: 'error', message: 'I couldn’t make out that line.' }); return; }
     if (!streamed?.shown) { lineIndex = 0; showLine(); }
@@ -286,10 +283,10 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
         last.romaji = (last.romaji || '') + ' ' + (line.romaji || '');
         last.tokens = [...(last.tokens || []), ...(line.tokens || [])];
         if (activeDisplay.shown && phrase === last) emit({ type: 'phrase-update', phrase: last });
-      } else {
+      } else if (!activeDisplay.shown) {
         activeDisplay.lines.push(line);
         lines = activeDisplay.lines;
-        if (!activeDisplay.shown) { activeDisplay.shown = true; lineIndex = 0; showLine(); }
+        activeDisplay.shown = true; lineIndex = 0; showLine();
       }
     }
     return;
