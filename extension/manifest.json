@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Ttaku \u2014 speak along",
-  "version": "1.4.6",
+  "version": "1.4.7",
   "description": "Pause anime, read romaji, and speak Japanese to continue. Powered by the Meta Model API.",
   "permissions": [
     "activeTab",

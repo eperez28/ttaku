@@ -16,7 +16,7 @@
   const card=$('card');card.style.left=((r.left||0)+width/2)+'px';
   // Practice lines (and karaoke) sit at the top of the video; idle states keep
   // the subtitle position.
-  if(cardAnchor==='top'){card.style.top=Math.max(10,(r.top||0)+18)+'px';card.style.bottom='auto'}
+  if(cardAnchor==='top'){card.style.top=((r.top||0)+Math.max(44,height*.09))+'px';card.style.bottom='auto'}
   else{card.style.top='auto';card.style.bottom=bottom+'px'}
   card.style.maxWidth=Math.max(200,width*.9)+'px';
   let size=Math.min(48,Math.max(22,height*.05));$('romaji').style.fontSize=size+'px';
