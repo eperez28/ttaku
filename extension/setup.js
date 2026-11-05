@@ -22,7 +22,7 @@ async function load() {
   $('export').hidden = !bank.length; $('progress').textContent = progress.phrases + ' ' + (progress.phrases === 1 ? 'line' : 'lines') + ' practiced';
   const current = await chrome.runtime.sendMessage({ target: 'worker', type: 'status' }); running = current?.session;
   const keyState = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-status' }); hasKey = !!keyState?.hasKey;
-  keyStatus(hasKey ? 'Key saved for this browser session. It must be re-entered after Chrome restarts or the extension reloads.' : 'No key saved. It is kept only in this browser session and must be re-entered after Chrome restarts or the extension reloads.');
+  keyStatus(hasKey ? 'Key saved on this device. It stays saved after Chrome restarts — Clear removes it.' : 'No key saved yet. It is stored only in the extension, never on web pages.');
   [currentTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   const isPlayer = currentTab?.url?.startsWith('https://www.crunchyroll.com/watch/') || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(currentTab?.url || '');
   $('episode-title').textContent = isPlayer ? (currentTab.title || 'Video episode').replace(/ - Watch on Crunchyroll$/, '') : 'Open a Crunchyroll episode';
@@ -33,7 +33,7 @@ $('key-save').onclick = async () => {
   const value = $('meta-key').value; $('meta-key').value = '';
   const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-save', key: value });
   if (r?.error) { keyStatus(r.error); return; }
-  hasKey = true; keyStatus('Key saved for this browser session. It must be re-entered after Chrome restarts or the extension reloads.'); updateStart();
+  hasKey = true; keyStatus('Key saved on this device. It stays saved after Chrome restarts — Clear removes it.'); updateStart();
 };
 $('key-clear').onclick = async () => {
   $('meta-key').value = '';

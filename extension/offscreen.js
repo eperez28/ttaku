@@ -25,7 +25,8 @@ function closeLive(finalize = false) {
 }
 async function openLive() {
   closeLive(); liveFailed = false;
-  const { metaKey } = await chrome.storage.session.get('metaKey');
+  const stored = await chrome.storage.local.get('metaKey');
+  const metaKey = stored.metaKey || (await chrome.storage.session.get('metaKey')).metaKey;
   if (!metaKey) { liveFailed = true; return; } // Completed-audio check still works.
   let ws;
   try { ws = new WebSocket(META_WS); } catch { liveFailed = true; return; }

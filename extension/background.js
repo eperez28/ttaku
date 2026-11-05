@@ -1,6 +1,8 @@
 // Privileged service worker: the only context that makes Meta HTTP requests.
-// The API key lives in chrome.storage.session (TRUSTED_CONTEXTS_ONLY), is
-// read here on demand, and is never sent to content scripts, pages, or logs.
+// The API key lives in chrome.storage.local (extension-only storage; web
+// pages cannot read it), is read here on demand, and is never sent to
+// content scripts, pages, or logs. It persists across Chrome restarts and
+// extension reloads until the user clears it in the popup.
 import { META_BASE, TEXT_MODEL, ASR_MODEL, PHRASE_SCHEMA, READING_SCHEMA, PHRASE_INSTRUCTIONS, READING_INSTRUCTIONS, responsesBody, extractResponsesText, extractTranscript, transcribeRequest, validatePhraseOutput, validateReadingOutput, mapMetaError } from './meta-protocol.js';
 import { base64ToBytes } from './audio-utils.js';
 
@@ -11,8 +13,17 @@ let keyGeneration = 0;
 try { chrome.storage.session.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS_ONLY' }); } catch {}
 
 async function getKey() {
-  const { metaKey } = await chrome.storage.session.get('metaKey');
-  return typeof metaKey === 'string' && metaKey ? metaKey : null;
+  const { metaKey } = await chrome.storage.local.get('metaKey');
+  if (typeof metaKey === 'string' && metaKey) return metaKey;
+  // Migrate a key saved in session storage by an earlier build, so it is
+  // not lost one last time.
+  const legacy = await chrome.storage.session.get('metaKey');
+  if (typeof legacy.metaKey === 'string' && legacy.metaKey) {
+    await chrome.storage.local.set({ metaKey: legacy.metaKey });
+    await chrome.storage.session.remove('metaKey');
+    return legacy.metaKey;
+  }
+  return null;
 }
 async function requireKey() {
   const key = await getKey();
@@ -131,10 +142,10 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       const key = String(m.key || '').trim();
       if (!key) throw Error('Paste a Meta Model API key first.');
       endMetaSessions();
-      await chrome.storage.session.set({ metaKey: key });
+      await chrome.storage.local.set({ metaKey: key }); await chrome.storage.session.remove('metaKey');
       return { ok: true, hasKey: true };
     }
-    if (m.type === 'key-clear') { endMetaSessions(); await chrome.storage.session.remove('metaKey'); return { ok: true, hasKey: false }; }
+    if (m.type === 'key-clear') { endMetaSessions(); await chrome.storage.local.remove('metaKey'); await chrome.storage.session.remove('metaKey'); return { ok: true, hasKey: false }; }
     if (m.type === 'key-test') {
       await structured('Return the hiragana reading of the supplied Japanese word, as data.', { transcript: 'ありがとう' }, READING_SCHEMA, 'connection_test');
       return { ok: true, models: [ASR_MODEL, TEXT_MODEL] };

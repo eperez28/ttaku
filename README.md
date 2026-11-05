@@ -14,7 +14,7 @@ cd ttaku
 Nothing to install or build — there are no runtime dependencies.
 
 1. Open `chrome://extensions` in Chrome, turn on **Developer mode**, click **Load unpacked**, and select the `extension/` folder in this repo.
-2. Click the Ttaku toolbar icon. Paste your **Meta Model API key** into the masked field and click **Save**. (Optional: **Test connection**.) The key is stored only in `chrome.storage.session`, restricted to trusted extension contexts, and must be re-entered after Chrome restarts or the extension reloads. **Clear** removes it and ends any active Meta sessions.
+2. Click the Ttaku toolbar icon. Paste your **Meta Model API key** into the masked field and click **Save**. (Optional: **Test connection**.) The key is stored in `chrome.storage.local` (extension-only storage that web pages cannot read), so it stays saved after Chrome restarts and extension reloads. **Clear** removes it and ends any active Meta sessions.
 3. In the popup, click **Allow microphone** and choose **Allow** in the permission window.
 
 ## Judge walkthrough (no streaming subscription)
