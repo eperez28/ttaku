@@ -147,7 +147,7 @@ async function stop() {
 function isSupportedPage(url = '') {
   return url.startsWith('https://www.crunchyroll.com/watch/') || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(url);
 }
-async function start(tab, mode = 'rehearse') {
+async function start(tab) {
   if (starting) throw Error('Ttaku is still starting. Give it a moment.');
   if (await session()) throw Error('Ttaku is already running. Stop practice before starting another episode.');
   starting = true;
@@ -163,23 +163,13 @@ async function start(tab, mode = 'rehearse') {
     const streamId = await chrome.tabCapture.getMediaStreamId({ targetTabId: tab.id });
     const id = crypto.randomUUID();
     await chrome.storage.session.set({ session: { tabId: tab.id, id, frameId: ready.frameId || 0, title: tab.title, url: tab.url } });
-    const r = await control({ type: 'start', streamId, sessionId: id, mode });
+    const r = await control({ type: 'start', streamId, sessionId: id });
     if (r?.error) throw Error(r.error);
-    await chrome.tabs.sendMessage(tab.id, { target: 'player', type: 'start', sessionId: id, mode });
+    await chrome.tabs.sendMessage(tab.id, { target: 'player', type: 'start', sessionId: id });
     await chrome.action.setBadgeBackgroundColor({ color: '#dd583b' }); await chrome.action.setBadgeText({ text: 'ON' });
   } catch (error) { await stop(); await chrome.storage.local.set({ lastError: error.message }); throw error; } finally { starting = false; }
 }
 
-async function switchMode(newMode) {
-  if (!['rehearse', 'karaoke'].includes(newMode)) return;
-  await chrome.storage.local.set({ mode: newMode });
-  const current = await session(); if (!current) return { ok: true };
-  // Pause the video while Ttaku readjusts, then play again when ready.
-  await chrome.tabs.sendMessage(current.tabId, { target: 'player', type: 'mode-pause' }).catch(() => {});
-  await control({ type: 'set-mode', mode: newMode, sessionId: current.id }).catch(() => {});
-  await chrome.tabs.sendMessage(current.tabId, { target: 'player', type: 'set-mode', mode: newMode }).catch(() => {});
-  return { ok: true };
-}
 chrome.tabs.onRemoved.addListener(async id => { if ((await session())?.tabId === id) await stop(); });
 chrome.commands.onCommand.addListener(async command => { if (command === 'capture-phrase') await control({ type: 'commit' }).catch(() => {}); });
 
@@ -206,7 +196,6 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       return { ok: true, hasKey: true };
     }
     if (m.type === 'key-clear') { endMetaSessions(); await chrome.storage.local.remove('metaKey'); await chrome.storage.session.remove('metaKey'); return { ok: true, hasKey: false }; }
-    if (m.type === 'set-mode') return switchMode(m.mode);
     if (m.type === 'key-get') return { key: await getKey() };
     if (m.type === 'diag') {
       if (m.diag) await chrome.storage.local.set({ diag: { peak: Number(m.diag.peak) || 0, rms: Number(m.diag.rms) || 0, started: !!m.diag.started, armed: !!m.diag.armed, clips: Number(m.diag.clips) || 0, outcome: String(m.diag.outcome || '').slice(0, 200), at: Number(m.diag.at) || Date.now() } });
@@ -216,7 +205,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       await structured('Return the hiragana reading of the supplied Japanese word, as data.', { transcript: 'ありがとう' }, READING_SCHEMA, 'connection_test');
       return { ok: true, models: [ASR_MODEL, TEXT_MODEL] };
     }
-    if (m.type === 'start') { const tab = await chrome.tabs.get(m.tabId); await start(tab, ['rehearse', 'karaoke'].includes(m.mode) ? m.mode : 'rehearse'); await chrome.storage.local.set({ lastError: '' }); return { ok: true }; }
+    if (m.type === 'start') { const tab = await chrome.tabs.get(m.tabId); await start(tab); await chrome.storage.local.set({ lastError: '' }); return { ok: true }; }
     if (m.type === 'permission') { await chrome.windows.create({ url: chrome.runtime.getURL('microphone.html'), type: 'popup', width: 390, height: 330 }); return { ok: true }; }
     if (m.type === 'stop') { await stop(); return { ok: true }; }
     if (m.type === 'save') {
@@ -241,10 +230,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     }
     const current = await session(); if (!current) return;
     if (m.type === 'audio-event') { if (m.sessionId !== current.id) return; return chrome.tabs.sendMessage(current.tabId, { target: 'player', ...m.event }).catch(() => {}); }
-    if (m.type === 'player-event' && sender.tab?.id === current.tabId) {
-      if (m.event?.type === 'set-mode') return switchMode(m.event.mode);
-      return control({ ...m.event, sessionId: current.id });
-    }
+    if (m.type === 'player-event' && sender.tab?.id === current.tabId) return control({ ...m.event, sessionId: current.id });
   };
   if (!['worker', 'meta'].includes(m.target)) return;
   run().then(reply, e => reply({ error: e.message })); return true;

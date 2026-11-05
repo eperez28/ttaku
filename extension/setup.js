@@ -1,5 +1,5 @@
 const $ = id => document.getElementById(id);
-let running = null, currentTab = null, micReady = false, hasKey = false, starting = false, practiceMode = 'rehearse';
+let running = null, currentTab = null, micReady = false, hasKey = false, starting = false;
 
 const isPlayerUrl = url => !!url && (url.startsWith('https://www.crunchyroll.com/watch/') || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(url));
 
@@ -21,7 +21,6 @@ function updateStart() {
   const button = $('start');
   button.setAttribute('aria-checked', String(!!running));
   button.disabled = starting || (!running && currentStep() === 'episode');
-  renderModes();
 }
 function showError(message) { const text = message ? friendlyError(message) : ''; $('error').textContent = text; $('error').hidden = !text; }
 function keyStatus(message) { $('key-status').textContent = message; }
@@ -39,9 +38,7 @@ function wordRow(word, count) {
 const emptyNote = text => { const p = document.createElement('div'); p.className = 'empty'; p.textContent = text; return p; };
 
 async function load() {
-  const stored = await chrome.storage.local.get(['micReady', 'bank', 'spokenBank', 'progress', 'lastError', 'showJapanese', 'mode']);
-  if (['rehearse', 'karaoke'].includes(stored.mode)) practiceMode = stored.mode;
-  renderModes();
+  const stored = await chrome.storage.local.get(['micReady', 'bank', 'spokenBank', 'progress', 'lastError', 'showJapanese']);
   micReady = !!stored.micReady;
   const bank = stored.bank || [];
   const spoken = [...(stored.spokenBank || [])].sort((a, b) => (b.count || 0) - (a.count || 0) || (b.lastSeen || 0) - (a.lastSeen || 0));
@@ -81,7 +78,7 @@ $('start').onclick = async () => {
   if (step !== 'ready') return;
   showError(''); starting = true; updateStart();
   try {
-    const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'start', tabId: currentTab.id, mode: practiceMode });
+    const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'start', tabId: currentTab.id });
     if (r?.error) throw Error(r.error);
     window.close();
   } catch (e) { starting = false; showError(e.message); await load(); }
@@ -105,14 +102,6 @@ $('key-test').onclick = async () => {
   keyStatus(r?.error ? friendlyError(r.error) : 'Works.');
 };
 $('japanese-toggle').onclick = async () => { const v = $('japanese-toggle').getAttribute('aria-checked') !== 'true'; await chrome.storage.local.set({ showJapanese: v }); $('japanese-toggle').setAttribute('aria-checked', String(v)); };
-function renderModes() {
-  for (const b of document.querySelectorAll('#modes button')) { b.setAttribute('aria-checked', String(b.dataset.mode === practiceMode)); b.disabled = starting; }
-}
-for (const b of document.querySelectorAll('#modes button')) b.onclick = async () => {
-  practiceMode = b.dataset.mode; renderModes();
-  await chrome.storage.local.set({ mode: practiceMode });
-  if (running) { const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'set-mode', mode: practiceMode }); if (r?.error) showError(r.error); }
-};
 function showView(view) {
   for (const name of ['practice', 'words', 'settings']) $(name + '-view').hidden = name !== view;
   $('heading').textContent = { practice: 'Ttaku', words: 'Word bank', settings: 'Settings' }[view];

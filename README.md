@@ -10,8 +10,6 @@ No flashcards. No lessons. Just your show, and you, talking back to it.
 
 **Rehearse** — Like practicing with a patient friend. The show pauses after every line, shows you the words, and waits until you say them before it plays again. Grunts, laughs, and background noise don't stop the show — only real lines do. Too long a speech? You practice it piece by piece in the same pause. If you'd rather keep watching, just press Play and Ttaku lets the line go.
 
-**Karaoke** — For talking along with the characters. The words appear at the top while the scene plays and fill in as you say them — the show never stops.
-
 Everything you say is collected for you in a **word bank**: the words you find yourself saying all the time, plus any you tap to save while practicing.
 
 ## Getting started
@@ -22,7 +20,7 @@ You don't need to install anything or run any code. You just need Chrome and a f
 2. In Chrome, go to `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked**, and choose the `extension` folder.
 3. Click the Ttaku icon in your toolbar. Hit the gear (⚙ Settings), paste your **Meta Model API key**, and click **Save**. Hit **Test connection** if you want to check it works.
 4. Still in Settings, click **Allow access** for the microphone and say yes when Chrome asks.
-5. Open an anime episode on Crunchyroll with Japanese audio, click the Ttaku icon, flip the **Practice** switch on, and pick **Rehearse** or **Karaoke**.
+5. Open an anime episode on Crunchyroll with Japanese audio, click the Ttaku icon, flip the **Practice** switch on.
 
 That's it. Your key stays saved in the extension on your device — you only enter it once. To change or remove it later, it's in Settings.
 

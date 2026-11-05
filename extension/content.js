@@ -1,7 +1,7 @@
 (()=>{
  const VERSION=chrome.runtime.getManifest().version;if(globalThis.__takuVersion===VERSION)return;globalThis.__takuVersion=VERSION;
  const GEN=(globalThis.__takuGen=(globalThis.__takuGen||0)+1);
- let active=false,video=null,host=null,shadow=null,phase='off',mode='rehearse',cardAnchor='bottom',chipTimer=null,phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
+ let active=false,video=null,host=null,shadow=null,phase='off',cardAnchor='bottom',phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
  const $=id=>shadow?.getElementById(id);
  const send=event=>chrome.runtime.sendMessage({target:'worker',type:'player-event',event}).catch(()=>{});
  const pauseAll=()=>{for(const v of document.querySelectorAll('video')){if(!v.paused)v.pause()}};
@@ -15,7 +15,7 @@
   const captionTop=node?.getBoundingClientRect().top;
   const bottom=Number.isFinite(captionTop)?Math.max(28,innerHeight-captionTop+12):Math.max(28,innerHeight-(r.bottom||height)+height*.18);
   const card=$('card');card.style.left=((r.left||0)+width/2)+'px';
-  // Practice lines (and karaoke) sit at the top of the video; idle states keep
+  // Practice lines sit at the top of the video; idle states keep
   // the subtitle position.
   if(cardAnchor==='top'){card.style.top=((r.top||0)+Math.max(44,height*.09))+'px';card.style.bottom='auto'}
   else{card.style.top='auto';card.style.bottom=bottom+'px'}
@@ -51,12 +51,11 @@
    .words{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:7px}
    .words button{border:0;background:#ffffff12;border-radius:5px;font-size:12px;padding:5px 8px}
    .japanese{font-size:12px;color:#ddd;margin-top:4px}
-   .modechip{position:absolute;top:16px;left:50%;transform:translateX(-50%);background:#141414e8;backdrop-filter:blur(12px);color:#fff;font:600 12.5px -apple-system,BlinkMacSystemFont,sans-serif;padding:6px 13px;border-radius:20px;pointer-events:none}
    .end{position:absolute;top:18px;right:18px;pointer-events:auto;opacity:0;transition:opacity .15s}
    .end:hover,.end:focus-within{opacity:1}
    .end button{background:#141414e8}
    @media(prefers-reduced-motion:reduce){.fill,.controls{transition:none}}
-   </style><div class="modechip" id="modechip" hidden></div><div class="end"><button id="stop" aria-label="Stop Taku" title="Stop Taku"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><section class="caption" id="card" hidden role="region" aria-label="Repeat the Japanese line"><div class="controls"><button id="replay" class="text" aria-label="Replay line" title="Replay line">Replay</button><button id="retry" class="text" aria-label="Try again" title="Try again">Try again</button><button id="commit" class="text" aria-label="Done speaking" title="Done speaking">Done</button><button id="details-toggle" class="text" aria-label="Meaning and words" title="Meaning and words">Meaning</button><button id="skip" class="text" aria-label="Skip line" title="Skip line">Skip</button></div><div class="glass"><div class="line" id="romaji"></div></div><div class="status" id="feedback" role="status" aria-live="polite"></div><div class="details" id="details" hidden><div class="translation" id="meaning"></div><div class="japanese" id="japanese" hidden></div><div class="words" id="words"></div></div></section>`;
+   </style><div class="end"><button id="stop" aria-label="Stop Taku" title="Stop Taku"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><section class="caption" id="card" hidden role="region" aria-label="Repeat the Japanese line"><div class="controls"><button id="replay" class="text" aria-label="Replay line" title="Replay line">Replay</button><button id="retry" class="text" aria-label="Try again" title="Try again">Try again</button><button id="commit" class="text" aria-label="Done speaking" title="Done speaking">Done</button><button id="details-toggle" class="text" aria-label="Meaning and words" title="Meaning and words">Meaning</button><button id="skip" class="text" aria-label="Skip line" title="Skip line">Skip</button></div><div class="glass"><div class="line" id="romaji"></div></div><div class="status" id="feedback" role="status" aria-live="polite"></div><div class="details" id="details" hidden><div class="translation" id="meaning"></div><div class="japanese" id="japanese" hidden></div><div class="words" id="words"></div></div></section>`;
    $('details-toggle').onclick=()=>{$('details').hidden=!$('details').hidden};
    $('stop').onclick=()=>chrome.runtime.sendMessage({target:'worker',type:'stop'});
    $('skip').onclick=()=>send({type:'skip'});$('retry').onclick=()=>send({type:'retry'});$('commit').onclick=()=>send({type:'commit'});
@@ -66,7 +65,6 @@
   }
   const fs=document.fullscreenElement,parent=fs&&fs.tagName!=='VIDEO'?fs:document.documentElement;if(host.parentNode!==parent)parent.append(host);position();
  }
- function showChip(text){mount();const chip=$('modechip');chip.textContent=text;chip.hidden=false;clearTimeout(chipTimer);chipTimer=setTimeout(()=>{chip.hidden=true},1700)}
  function renderWords(){
   $('words').replaceChildren();
   for(const word of phrase.words||[]){const b=document.createElement('button');b.textContent=word.romaji;b.title=word.meaning;b.onclick=async()=>{await chrome.runtime.sendMessage({target:'worker',type:'save',word,context:{sentence:phrase.japanese,romaji:phrase.romaji,meaning:phrase.meaning,title:document.title,url:phraseURL,time:segmentStart}});b.textContent='✓ '+word.romaji};$('words').append(b)}
@@ -90,7 +88,7 @@
    } else if(next==='empty'){$('card').hidden=true;$('feedback').textContent=''}
    return;
   }
-  phase=next;mount();$('card').hidden=['watching','off'].includes(next);$('card').dataset.phase=next;if(next==='karaoke'){cardAnchor='top';if(!phrase)$('card').hidden=true;position()}
+  phase=next;mount();$('card').hidden=['watching','off'].includes(next);$('card').dataset.phase=next;
   $('feedback').textContent=['error','empty','retry'].includes(next)?message:'';
   if($('feedback').textContent)$('details').hidden=true;
   $('retry').hidden=!(next==='error'&&phrase);$('retry').disabled=!phrase;
@@ -105,22 +103,8 @@
   // The user pressed Play themselves: skip this line and keep watching.
   if(['listening','checking','retry','error','processing','passed'].includes(phase)){state('watching');send({type:'user-continue'})}
  }
- const sentCues=new Set();
- function checkKaraokeCues(){
-  if(!active||mode!=='karaoke')return;
-  for(const track of video.textTracks||[]){
-   if(!track.cues)continue;
-   for(const cue of track.cues){
-    const now=video.currentTime;
-    if(cue.startTime>now&&cue.startTime<now+7&&/[\u3040-\u30ff\u3400-\u9fff]/.test(cue.text)){
-     const key=cue.startTime+':'+cue.text;if(sentCues.has(key))continue;sentCues.add(key);
-     send({type:'karaoke-cue',text:cue.text.replace(/<[^>]+>/g,'')});
-    }
-   }
-  }
- }
  function checkCue(){
-  if(!active||(phase!=='watching'&&mode!=='karaoke'))return;
+  if(!active||phase!=='watching')return;
   let key='';for(const track of video.textTracks||[]){if(track.mode==='showing'&&track.activeCues?.length){const cue=track.activeCues[0];key=cue.startTime+':'+cue.endTime+':'+cue.text;break}}
   if(!key&&captionNode?.isConnected)key=captionNode.textContent.trim();
   if(cueKey&&key!==cueKey)send({type:'caption-boundary'});cueKey=key;
@@ -131,14 +115,14 @@
   if(m.target!=='player')return;
   if(m.type==='probe'){if(findVideo())reply({video:true,version:VERSION});return}
   if(m.type==='start'){
-   if(!findVideo())return;cleanup();video=findVideo();active=true;mode=m.mode||'rehearse';state(mode==='karaoke'?'karaoke':'watching');showChip(mode==='karaoke'?'Karaoke':'Rehearse');video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay);video.addEventListener('play',onPlay);
+   if(!findVideo())return;cleanup();video=findVideo();active=true;state('watching');video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay);video.addEventListener('play',onPlay);
    guard=setInterval(()=>{
     if(GEN!==globalThis.__takuGen){clearInterval(guard);active=false;host?.remove();host=shadow=null;return}
     if(!active)return;
     if(!video.isConnected){const fresh=findVideo();if(fresh&&fresh!==video){video.removeEventListener('pause',onPause);video.removeEventListener('playing',onPlay);video.removeEventListener('play',onPlay);video=fresh;video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay);video.addEventListener('play',onPlay)}else if(!fresh){cleanup();chrome.runtime.sendMessage({target:'worker',type:'stop'});return}}
     if(phase==='replay'&&video.currentTime>=replayEnd){video.pause();video.playbackRate=previousRate;phase='listening';send({type:'replay-ended'})}
-    else if(!['watching','replay','off','karaoke'].includes(phase))pauseAll();
-    checkCue();checkKaraokeCues();
+    else if(!['watching','replay','off'].includes(phase))pauseAll();
+    checkCue();
    },60);
    observer=new MutationObserver(()=>{if(active){position();checkCue()}});observer.observe(video.parentElement||document.documentElement,{subtree:true,childList:true,characterData:true});
    video.play().catch(error=>{if(active&&phase==='watching'&&error.name!=='AbortError')state('error','Press Play to begin.')});reply({ok:true});return;
@@ -155,10 +139,10 @@
   if(m.type==='word-progress'){progress(m.count);return}
   if(m.type==='result'){if(m.passed){progress(wordEls.length);state('passed')}return}
   if(m.type==='resume'){phase='watching';cueKey='';video.playbackRate=previousRate;video.play().catch(()=>state('error','Press Play to continue.'));return}
-  if(m.type==='mode-pause'){phase='switching';phrase=null;wordEls=[];video.pause();if($('card')){$('card').hidden=true;$('romaji').replaceChildren()}return}
-  if(m.type==='set-mode'){mode=m.mode;phrase=null;wordEls=[];phase=mode==='karaoke'?'karaoke':'watching';mount();$('card').hidden=true;$('details').hidden=true;video.playbackRate=previousRate;video.play().catch(()=>{});showChip(mode==='karaoke'?'Karaoke':'Rehearse');reply({ok:true});return}
-  if(m.type==='seek-back'){if(video){video.currentTime=Math.max(0,video.currentTime-(m.seconds||10));video.play().catch(()=>{});}return}
-  if(m.type==='karaoke-phrase'){phrase=m.phrase;mode='karaoke';phase='karaoke';cardAnchor='top';mount();$('card').hidden=false;showWords();position();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;return}
+
+
+
+
   if(m.type==='replay'){replayEnd=segmentEnd;video.currentTime=segmentStart;state('replay');video.play().catch(()=>state('error','Couldn’t replay the line.'));return}
  });
  chrome.storage.onChanged.addListener(changes=>{if(changes.showJapanese&&$('japanese'))$('japanese').hidden=!changes.showJapanese.newValue});
