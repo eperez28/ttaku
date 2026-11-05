@@ -134,3 +134,15 @@ export function matchCoverage(tokens,mask){
  (tokens||[]).forEach((tok,i)=>{const len=(tok.reading||tok.romaji||'').length||1;total+=len;if(mask?.[i])hit+=len});
  return total?hit/total:0;
 }
+
+export function isSubstantialLine(line){
+ if(!line)return false;
+ const jp=(String(line.japanese||'').match(/[\u3040-\u30ff\u3400-\u9fff]/g)||[]).length;
+ const words=String(line.romaji||'').split(/\s+/).filter(Boolean).length;
+ return jp>=3&&words>=2;
+}
+// The practice line is the first substantial line in the clip — never a
+// leading interjection ("Oi,", "Hey,") with the real sentence behind it.
+export function pickPracticeLine(lines){
+ return (lines||[]).find(isSubstantialLine)||null;
+}

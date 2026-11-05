@@ -2,7 +2,7 @@
 // Meta realtime stream. HTTP Meta calls are delegated to the service worker;
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
-import { recognizedPrefix, recognizedMatches, matchCoverage, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey } from './word-progress.js';
+import { recognizedPrefix, recognizedMatches, matchCoverage, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey, pickPracticeLine, isSubstantialLine } from './word-progress.js';
 import { matchReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
@@ -200,7 +200,8 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
       const turns = raced && raced !== 'late' && !raced.error && Array.isArray(raced.turns) ? raced.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)) : null;
       if (turns && turns.length >= 2 && !activeDisplay.shown) {
         activeDisplay = null;
-        lines = turns.slice(0, 1).map(tn => ({ pendingTurn: tn.text, speaker: tn.speaker || '', japanese: '', reading: '', romaji: '', tokens: [], words: [], meaning: '' }));
+        const firstTurn = turns.find(tn => (tn.text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length >= 3) || turns[0];
+        lines = [{ pendingTurn: firstTurn.text, speaker: firstTurn.speaker || '', japanese: '', reading: '', romaji: '', tokens: [], words: [], meaning: '' }];
         lineIndex = 0; saveDiag('split into ' + turns.length + ' speaker turns');
         await showLine(); return;
       }
@@ -211,12 +212,17 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
     lines = built?.error && streamed?.shown ? streamed.lines : built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(l => punctuateLine(expandContractions(normalizeFiller(l))));
-    if (!streamed?.shown) lines = mergeRepeats(lines).slice(0, 1);
+    if (!streamed?.shown) { const pick = pickPracticeLine(mergeRepeats(lines)); lines = pick ? [pick] : []; }
     if (streamed?.shown && phrase) {
       // One line per pause: whatever is on screen is the whole pause.
       lines = [phrase]; lineIndex = 0;
     }
-    if (!lines.length) { phase = 'error'; saveDiag('could not build a line from that'); emit({ type: 'state', phase: 'error', message: 'I couldn’t make out that line.' }); return; }
+    if (!lines.length) {
+      // Only fragments here (a shout, a laugh): not a line. Let it play.
+      phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('only fragments in that clip, letting it play');
+      if (prePaused) emit({ type: 'resume' }); else emit({ type: 'state', phase: 'empty', message: '' });
+      return;
+    }
     if (!streamed?.shown) { lineIndex = 0; showLine(); }
     // Precise token alignment arrives just behind the display and swaps in
     // without disturbing words already filled.
@@ -282,6 +288,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (m.type === 'romaji-preview' && activeDisplay && m.streamId === activeDisplay.id && !activeDisplay.shown && m.romaji) { emit({ type: 'romaji-preview', romaji: m.romaji }); return; }
     if (m.type === 'display-line' && activeDisplay && m.streamId === activeDisplay.id && m.line) {
       const line = punctuateLine(expandContractions(normalizeFiller(m.line)));
+      if (!activeDisplay.shown && !isSubstantialLine(line)) return; // fragment first: wait for the real line
       const last = activeDisplay.lines[activeDisplay.lines.length - 1];
       if (last && repeatKey(last) && repeatKey(last) === repeatKey(line)) {
         last.japanese = (last.japanese || '') + (line.japanese || '');
