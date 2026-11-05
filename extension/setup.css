@@ -62,3 +62,6 @@ h3:first-child{margin-top:0}
 .powerswitch span{display:block;width:27px;height:27px;border-radius:50%;background:#fff;box-shadow:0 1px 3px #0003}
 .powerswitch[aria-checked=true]{background:#28a745;justify-content:flex-end}
 .powerswitch:disabled{opacity:.45}
+
+.switch-wrap{display:flex;align-items:center;gap:8px}
+.switch-state{font-size:12px;font-weight:600;color:#717176;min-width:20px;text-align:right}

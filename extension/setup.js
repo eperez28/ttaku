@@ -20,6 +20,7 @@ function currentStep() {
 function updateStart() {
   const button = $('start');
   button.setAttribute('aria-checked', String(!!running));
+  $('start-state').textContent = running ? 'On' : 'Off';
   button.disabled = starting || (!running && currentStep() === 'episode');
 }
 function showError(message) { const text = message ? friendlyError(message) : ''; $('error').textContent = text; $('error').hidden = !text; }
