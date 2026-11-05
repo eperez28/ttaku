@@ -176,10 +176,24 @@ async function analyze(segment, prePaused = false) {
 async function check(segment) {
   const ticket = ++epoch; phase = 'checking'; closeLive(true); saveDiag('heard you, checking…'); emit({ type: 'state', phase, message: '' });
   try {
-    const heardResult = await meta({ type: 'attempt-reading', audioBase64: wav24Base64(segment.chunks, context.sampleRate) });
+    const wav = wav24Base64(segment.chunks, context.sampleRate);
+    const heardResult = await meta({ type: 'attempt-reading', audioBase64: wav });
     if (heardResult?.error) throw Error(heardResult.error);
     if (ticket !== epoch) return;
-    const result = { heard: heardResult.heard || '', ...matchReading(phrase.reading, heardResult.reading || '') };
+    // Judge every honest reading of the attempt and keep the best score:
+    // the converted reading, the raw transcript, and — if those fall
+    // short — a second transcription with different turn detection.
+    const judge = r => {
+      const a = matchReading(phrase.reading, r.reading || '');
+      const b2 = matchReading(phrase.reading, r.heard || '');
+      return b2.similarity > a.similarity ? { heard: r.heard || '', ...b2 } : { heard: r.heard || '', ...a };
+    };
+    let result = judge(heardResult);
+    if (!result.passed) {
+      const alt = await meta({ type: 'attempt-reading-alt', audioBase64: wav }).catch(() => null);
+      if (ticket !== epoch) return;
+      if (alt && !alt.error && alt.heard) { const altResult = judge(alt); if (altResult.similarity > result.similarity) result = altResult; }
+    }
     saveDiag(result.passed ? 'repeat accepted, playing again' : 'repeat not accepted (match ' + result.similarity + '%)');
     emit({ type: 'result', ...result });
     if (result.passed) { phase = 'passed'; emit({ type: 'word-progress', count: phrase.tokens?.length || 100 }); await chrome.runtime.sendMessage({ target: 'worker', type: 'passed', words: (phrase.words?.length ? phrase.words : (phrase.tokens || []).map(tok => ({ japanese: tok.japanese || '', reading: tok.reading || '', romaji: tok.romaji || '', meaning: '' }))) }); setTimeout(() => { if (ticket === epoch) advance(); }, 650); }
@@ -192,9 +206,9 @@ async function start(m) {
   await stop(); sessionId = m.sessionId; apiKeyCache = null; getApiKey(); diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; recentPeak = 0; saveDiag();
   try {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
-    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+    micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: true }, video: false });
     context = new AudioContext(); await context.resume(); await context.audioWorklet.addModule('pcm-worklet.js');
-    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 6, silenceSeconds: .3, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 20, silenceSeconds: .6, threshold: .018 });
+    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 6, silenceSeconds: .3, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 20, silenceSeconds: .6, threshold: .01 });
     const tabSource = await node(tabStream, chunk => {
       for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > recentPeak) recentPeak = v; }
       saveDiag();

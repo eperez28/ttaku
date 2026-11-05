@@ -3,7 +3,15 @@ export function normalizeReading(s = '') {
     // Accent-shaped differences count as the same sound on both sides:
     // づ/ぢ voicing, dropped gemination, を/は readings.
     .replace(/づ/g, 'ず').replace(/ぢ/g, 'じ')
-    .replace(/っ/g, 'つ').replace(/を/g, 'お').replace(/は/g, 'わ')
+    .replace(/っ/g, '').replace(/を/g, 'お').replace(/は/g, 'わ')
+    // Voicing is the first thing an accent moves: fold it away entirely.
+    .replace(/[がぎぐげご]/g, c => 'かきくけこ'['がぎぐげご'.indexOf(c)])
+    .replace(/[ざじずぜぞ]/g, c => 'さしすせそ'['ざじずぜぞ'.indexOf(c)])
+    .replace(/[だぢづでど]/g, c => 'たちつてと'['だぢづでど'.indexOf(c)])
+    .replace(/[ばびぶべぼぱぴぷぺぽ]/g, c => 'はひふへほはひふへほ'['ばびぶべぼぱぴぷぺぽ'.indexOf(c)])
+    // Long vowels: ou/ei spelling and held vowels count as one sound.
+    .replace(/ー/g, '').replace(/おう/g, 'お').replace(/えい/g, 'え')
+    .replace(/([あいうえお])\1+/g, '$1')
     .replace(/[^ぁ-ゖーa-z0-9]/gi, '').toLowerCase();
 }
 export function distance(a, b) {
