@@ -10,6 +10,7 @@ let context, tabStream, micStream, sessionId, phase = 'off', phrase = null, line
 let live = null, liveReady = false, liveQueue = [], liveFailed = false, liveEndTimer = null;
 let apiKeyCache = null;
 let activeDisplay = null;
+let helpTimer = null;
 let sourceLive = null, sourceReady = false, sourceQueue = [], sourceText = '', sourceWaiter = null, sourceFailed = false;
 const emit = event => chrome.runtime.sendMessage({ target: 'worker', type: 'audio-event', sessionId, event }).catch(() => {});
 let diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() };
@@ -128,7 +129,7 @@ async function acceptLive() {
   await chrome.runtime.sendMessage({ target: 'worker', type: 'passed', words: (phrase.words?.length ? phrase.words : (phrase.tokens || []).map(tok => ({ japanese: tok.japanese || '', reading: tok.reading || '', romaji: tok.romaji || '', meaning: '' }))) }).catch(() => {});
   setTimeout(() => { if (ticket === epoch) advance(); }, 500);
 }
-function listen(phaseName = 'listening') { phase = 'listening'; micSegments.reset(); armedAt = performance.now() + 450; saveDiag('paused, waiting for you to repeat it'); emit({ type: 'word-progress', count: 0 }); emit({ type: 'state', phase: phaseName, message: '' }); openLive(); }
+function listen(phaseName = 'listening') { phase = 'listening'; micSegments.reset(); armedAt = performance.now() + 450; saveDiag('paused, waiting for you to repeat it'); emit({ type: 'word-progress', count: 0 }); emit({ type: 'state', phase: phaseName, message: '' }); openLive(); clearTimeout(helpTimer); helpTimer = setTimeout(() => { if (phase === 'listening') emit({ type: 'struggle-help' }); }, 12000); }
 function showLine() {
   phrase = lines[lineIndex]; emit({ type: 'phrase', phrase, lineIndex, lineCount: lines.length }); listen();
   const shown = phrase;
@@ -188,7 +189,7 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
       if (!r || r.error || r.empty || phrase !== shown) return;
       const full = (r.lines?.length ? r.lines : [r]).map(l => ({ ...l }));
       const match = full.find(l => l.japanese === shown.japanese) || full[0];
-      if (match?.tokens?.length) { shown.tokens = match.tokens; emit({ type: 'phrase-tokens', tokens: match.tokens }); }
+      if (match?.tokens?.length) { shown.tokens = match.tokens; if (match.reading) shown.reading = match.reading; emit({ type: 'phrase-tokens', tokens: match.tokens }); }
     }).catch(() => {});
   } catch (error) { if (ticket === epoch) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('Meta error: ' + error.message); emit({ type: 'state', phase: 'error', message: error.message }); } }
 }
@@ -202,7 +203,7 @@ async function check(segment) {
     saveDiag(result.passed ? 'repeat accepted, playing again' : 'repeat not accepted (match ' + result.similarity + '%)');
     emit({ type: 'result', ...result });
     if (result.passed) { phase = 'passed'; emit({ type: 'word-progress', count: phrase.tokens?.length || 100 }); await chrome.runtime.sendMessage({ target: 'worker', type: 'passed', words: (phrase.words?.length ? phrase.words : (phrase.tokens || []).map(tok => ({ japanese: tok.japanese || '', reading: tok.reading || '', romaji: tok.romaji || '', meaning: '' }))) }); setTimeout(() => { if (ticket === epoch) advance(); }, 650); }
-    else { phase = 'retry'; emit({ type: 'state', phase, message: result.heard ? 'Try that line again.' : 'I couldn’t hear you.' }); setTimeout(() => { if (ticket === epoch) listen('retry'); }, 1300); }
+    else { phase = 'retry'; emit({ type: 'struggle-help' }); emit({ type: 'state', phase, message: result.heard ? 'Try that line again.' : 'I couldn’t hear you.' }); setTimeout(() => { if (ticket === epoch) listen('retry'); }, 1300); }
   } catch (error) { if (ticket === epoch) { phase = 'error'; saveDiag('repeat check failed: ' + error.message); emit({ type: 'state', phase, message: error.message }); } }
 }
 function resume() { epoch++; closeLive(); closeSourceLive(); phase = 'watching'; phrase = null; lines = []; lineIndex = 0; tabSegments.reset(); micSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'resume' }); emit({ type: 'state', phase, message: '' }); }

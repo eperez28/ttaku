@@ -122,8 +122,8 @@ async function phraseDisplayFromText(text) {
 }
 function mapDisplayLines(data) {
   if (!data || !Array.isArray(data.lines)) throw Error('Meta returned an unusable phrase. Please retry.');
-  return data.lines.filter(l => l && typeof l.japanese === 'string' && typeof l.reading === 'string' && typeof l.romaji === 'string')
-    .map(l => ({ ...l, meaning: '', note: '', words: [], tokens: displayTokens(l.romaji) }));
+  return data.lines.filter(l => l && typeof l.japanese === 'string' && typeof l.romaji === 'string')
+    .map(l => { const tokens = displayTokens(l.romaji); return { ...l, reading: typeof l.reading === 'string' ? l.reading : tokens.map(tok => tok.reading).join(''), meaning: '', note: '', words: [], tokens }; });
 }
 async function phraseDisplayStream(text, streamId) {
   const clean = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 300);

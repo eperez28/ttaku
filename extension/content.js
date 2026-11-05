@@ -41,6 +41,7 @@
    .ink{display:block;width:max-content;padding-left:3px;color:#ffd83d;-webkit-text-stroke:.2em #000;paint-order:stroke fill;text-shadow:var(--caption-shadow)}
    .word.done .fill{width:calc(100% + 8px)}
    .pending{color:#fff;text-shadow:var(--caption-shadow);font-size:.65em}
+   .help{margin-top:8px;text-align:center;font:600 15px/1.4 -apple-system,BlinkMacSystemFont,sans-serif;letter-spacing:.06em;color:#ffe9a8;text-shadow:1px 1px 2px #000,-1px -1px 2px #000}
    .controls,.details,.status{position:absolute;left:50%;transform:translateX(-50%);width:max-content;max-width:min(82vw,420px)}
    .controls{bottom:100%;display:flex;align-items:center;gap:2px;background:#141414e8;backdrop-filter:blur(12px);border-radius:8px;padding:3px;opacity:0;pointer-events:none;transition:opacity .15s}
    .caption:hover .controls,.caption:focus-within .controls,.caption[data-phase=error] .controls,.caption[data-phase=empty] .controls,.caption[data-phase=listening] .controls,.caption[data-phase=retry] .controls,.caption[data-phase=checking] .controls{opacity:1;pointer-events:auto}
@@ -57,7 +58,7 @@
    .end:hover,.end:focus-within{opacity:1}
    .end button{background:#141414e8}
    @media(prefers-reduced-motion:reduce){.fill,.controls{transition:none}}
-   </style><div class="end"><button id="stop" aria-label="Stop Taku" title="Stop Taku"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><section class="caption" id="card" hidden role="region" aria-label="Repeat the Japanese line"><div class="controls"><button id="replay" class="text" aria-label="Replay line" title="Replay line">Replay</button><button id="retry" class="text" aria-label="Try again" title="Try again">Try again</button><button id="commit" class="text" aria-label="Done speaking" title="Done speaking">Done</button><button id="details-toggle" class="text" aria-label="Meaning and words" title="Meaning and words">Meaning</button><button id="skip" class="text" aria-label="Skip line" title="Skip line">Skip</button></div><div class="glass"><div class="line" id="romaji"></div></div><div class="status" id="feedback" role="status" aria-live="polite"></div><div class="details" id="details" hidden><div class="translation" id="meaning"></div><div class="japanese" id="japanese" hidden></div><div class="words" id="words"></div></div></section>`;
+   </style><div class="end"><button id="stop" aria-label="Stop Taku" title="Stop Taku"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><section class="caption" id="card" hidden role="region" aria-label="Repeat the Japanese line"><div class="controls"><button id="replay" class="text" aria-label="Replay line" title="Replay line">Replay</button><button id="retry" class="text" aria-label="Try again" title="Try again">Try again</button><button id="commit" class="text" aria-label="Done speaking" title="Done speaking">Done</button><button id="details-toggle" class="text" aria-label="Meaning and words" title="Meaning and words">Meaning</button><button id="skip" class="text" aria-label="Skip line" title="Skip line">Skip</button></div><div class="glass"><div class="line" id="romaji"></div></div><div class="help" id="help" hidden></div><div class="status" id="feedback" role="status" aria-live="polite"></div><div class="details" id="details" hidden><div class="translation" id="meaning"></div><div class="japanese" id="japanese" hidden></div><div class="words" id="words"></div></div></section>`;
    $('details-toggle').onclick=()=>{$('details').hidden=!$('details').hidden};
    $('stop').onclick=()=>chrome.runtime.sendMessage({target:'worker',type:'stop'});
    $('skip').onclick=()=>send({type:'skip'});$('retry').onclick=()=>send({type:'retry'});$('commit').onclick=()=>send({type:'commit'});
@@ -66,6 +67,20 @@
    for(const event of ['keydown','pointerdown','click'])host.addEventListener(event,e=>e.stopPropagation());
   }
   const fs=document.fullscreenElement,parent=fs&&fs.tagName!=='VIDEO'?fs:document.documentElement;if(host.parentNode!==parent)parent.append(host);position();
+ }
+ function syllabify(word){
+  const s=String(word).toLowerCase().replace(/[^a-z]/g,'');const out=[];let i=0;
+  while(i<s.length){
+   if(s[i]==='n'&&(i===s.length-1||!'aeiouy'.includes(s[i+1]))){out.push('n');i++;continue}
+   let j=i;while(j<s.length&&!'aeiou'.includes(s[j]))j++;
+   if(j<s.length){out.push(s.slice(i,j+1));i=j+1}else{out.push(s.slice(i));break}
+  }
+  return out.join('-');
+ }
+ function showHelp(){
+  if(!phrase)return;
+  const el=$('help');el.textContent=(phrase.tokens||[]).map(tok=>syllabify(tok.romaji)).join('   ');
+  el.hidden=false;
  }
  function renderWords(){
   $('words').replaceChildren();
@@ -149,10 +164,11 @@
   if(m.type==='pause'){phase='processing';cardAnchor='top';mount();position();pauseAll();segmentEnd=Math.max(0,video.currentTime-(m.delaySeconds||0));segmentStart=Math.max(0,segmentEnd-m.duration);phraseURL=location.href;reply({ok:true});return}
   if(m.type==='state'){state(m.phase,m.message);return}
   if(m.type==='phrase'){
-   phrase=m.phrase;mount();showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=false;
+   phrase=m.phrase;mount();$('help').hidden=true;showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=false;
    renderWords();return;
   }
   if(m.type==='phrase-details'){if(phrase){phrase.meaning=m.meaning;phrase.words=m.words||[];$('meaning').textContent=phrase.meaning;$('details').hidden=false;renderWords()}return}
+  if(m.type==='struggle-help'){showHelp();return}
   if(m.type==='phrase-update'){if(phrase){const done=wordEls.filter(el=>el.classList.contains('done')).length;phrase=m.phrase;showWords();progress(done);if(phrase.meaning)$('meaning').textContent=phrase.meaning}return}
   if(m.type==='phrase-tokens'){if(phrase&&m.tokens?.length){const done=wordEls.filter(el=>el.classList.contains('done')).length;phrase.tokens=m.tokens;showWords();progress(done)}return}
   if(m.type==='word-progress'){progress(m.count,m.mask,m.part);return}
