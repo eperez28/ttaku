@@ -1,5 +1,6 @@
 (()=>{
  const VERSION=chrome.runtime.getManifest().version;if(globalThis.__takuVersion===VERSION)return;globalThis.__takuVersion=VERSION;
+ const GEN=(globalThis.__takuGen=(globalThis.__takuGen||0)+1);
  let active=false,video=null,host=null,shadow=null,phase='off',mode='rehearse',cardAnchor='bottom',chipTimer=null,phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
  const $=id=>shadow?.getElementById(id);
  const send=event=>chrome.runtime.sendMessage({target:'worker',type:'player-event',event}).catch(()=>{});
@@ -23,6 +24,7 @@
   const measured=$('romaji').scrollWidth;if(measured>width*.87)$('romaji').style.fontSize=Math.max(16,size*(width*.87)/measured)+'px';
  }
  function mount(){
+  for(const el of document.querySelectorAll('#taku-root'))if(el!==host)el.remove();
   if(!host){
    host=document.createElement('div');host.id='taku-root';shadow=host.attachShadow({mode:'open'});
    shadow.innerHTML=`<style>
@@ -125,11 +127,13 @@
  }
  function cleanup(){active=false;clearInterval(guard);observer?.disconnect();observer=null;video?.removeEventListener('pause',onPause);video?.removeEventListener('playing',onPlay);video?.removeEventListener('play',onPlay);if(phase==='replay'&&video){video.pause();video.playbackRate=previousRate}host?.remove();host=shadow=null;phase='off';phrase=null;wordEls=[];cueKey=''}
  chrome.runtime.onMessage.addListener((m,sender,reply)=>{
+  if(GEN!==globalThis.__takuGen)return;
   if(m.target!=='player')return;
   if(m.type==='probe'){if(findVideo())reply({video:true,version:VERSION});return}
   if(m.type==='start'){
    if(!findVideo())return;cleanup();video=findVideo();active=true;mode=m.mode||'rehearse';state(mode==='karaoke'?'karaoke':'watching');showChip(mode==='karaoke'?'Karaoke':'Rehearse');video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay);video.addEventListener('play',onPlay);
    guard=setInterval(()=>{
+    if(GEN!==globalThis.__takuGen){clearInterval(guard);active=false;host?.remove();host=shadow=null;return}
     if(!active)return;
     if(!video.isConnected){const fresh=findVideo();if(fresh&&fresh!==video){video.removeEventListener('pause',onPause);video.removeEventListener('playing',onPlay);video.removeEventListener('play',onPlay);video=fresh;video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay);video.addEventListener('play',onPlay)}else if(!fresh){cleanup();chrome.runtime.sendMessage({target:'worker',type:'stop'});return}}
     if(phase==='replay'&&video.currentTime>=replayEnd){video.pause();video.playbackRate=previousRate;phase='listening';send({type:'replay-ended'})}
@@ -151,7 +155,7 @@
   if(m.type==='word-progress'){progress(m.count);return}
   if(m.type==='result'){if(m.passed){progress(wordEls.length);state('passed')}return}
   if(m.type==='resume'){phase='watching';cueKey='';video.playbackRate=previousRate;video.play().catch(()=>state('error','Press Play to continue.'));return}
-  if(m.type==='mode-pause'){phase='switching';video.pause();if($('card'))$('card').hidden=true;return}
+  if(m.type==='mode-pause'){phase='switching';phrase=null;wordEls=[];video.pause();if($('card')){$('card').hidden=true;$('romaji').replaceChildren()}return}
   if(m.type==='set-mode'){mode=m.mode;phrase=null;wordEls=[];phase=mode==='karaoke'?'karaoke':'watching';mount();$('card').hidden=true;$('details').hidden=true;video.playbackRate=previousRate;video.play().catch(()=>{});showChip(mode==='karaoke'?'Karaoke':'Rehearse');reply({ok:true});return}
   if(m.type==='seek-back'){if(video){video.currentTime=Math.max(0,video.currentTime-(m.seconds||10));video.play().catch(()=>{});}return}
   if(m.type==='karaoke-phrase'){phrase=m.phrase;mode='karaoke';phase='karaoke';cardAnchor='top';mount();$('card').hidden=false;showWords();position();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;return}
