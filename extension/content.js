@@ -69,7 +69,7 @@
   const fs=document.fullscreenElement,parent=fs&&fs.tagName!=='VIDEO'?fs:document.documentElement;if(host.parentNode!==parent)parent.append(host);position();
  }
  function syllabify(word){
-  const s=String(word).toLowerCase().replace(/[^a-z]/g,'');const out=[];let i=0;
+  const s=String(word).toLowerCase().replace(/[^a-z]/g,'');if(/^n+$/.test(s))return s;const out=[];let i=0;
   while(i<s.length){
    if(s[i]==='n'&&(i===s.length-1||!'aeiouy'.includes(s[i+1]))){out.push('n');i++;continue}
    let j=i;while(j<s.length&&!'aeiou'.includes(s[j]))j++;

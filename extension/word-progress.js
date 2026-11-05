@@ -99,3 +99,32 @@ export function mergeRepeats(lines){
  }
  return out;
 }
+
+export function expandContractions(line){
+ if(!line?.tokens?.length)return line;
+ const tokens=[];
+ for(const tok of line.tokens){
+  const raw=String(tok.romaji||'');
+  const punct=(raw.match(/[.,!?]+$/)||[''])[0];
+  const word=raw.slice(0,raw.length-punct.length);
+  const m=word.match(/^(.{2,}?)(chatte|jatte)$/i);
+  if(!m){tokens.push(tok);continue}
+  const isCha=m[2].toLowerCase()==='chatte';
+  const suffixKana=isCha?'ちゃって':'じゃって';
+  const stemReading=String(tok.reading||'').replace(/(ちゃって|じゃって)$/,'');
+  const jp=String(tok.japanese||'');
+  const jpStem=jp.endsWith(suffixKana)?jp.slice(0,jp.length-suffixKana.length):jp;
+  const jpSuffix=jp.endsWith(suffixKana)?suffixKana:'';
+  tokens.push({...tok,romaji:m[1],reading:stemReading,japanese:jpStem});
+  tokens.push({japanese:jpSuffix,reading:suffixKana,romaji:m[2].toLowerCase()+punct});
+ }
+ return {...line,tokens,romaji:tokens.map(tok=>tok.romaji).join(' ')};
+}
+export function normalizeFiller(line){
+ if(!line||!/^[んン]/.test(String(line.japanese||'')))return line;
+ const first=String(line.romaji||'').trim().split(/\s+/)[0]||'';
+ if(!/^n+[,.]?$/i.test(first))return line;
+ const romaji=String(line.romaji||'').replace(/^\s*n+[,.]?/i,'nnn'+(first.includes(',')?',':''));
+ const tokens=line.tokens?.map((tok,i)=>i===0?{...tok,romaji:'nnn'+((tok.romaji||'').includes(',')?',':'')}:tok);
+ return {...line,romaji,tokens};
+}

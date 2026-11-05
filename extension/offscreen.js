@@ -2,7 +2,7 @@
 // Meta realtime stream. HTTP Meta calls are delegated to the service worker;
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
-import { recognizedPrefix, recognizedMatches, compactLines, isPauseWorthy, punctuateLine, mergeRepeats, repeatKey } from './word-progress.js';
+import { recognizedPrefix, recognizedMatches, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey } from './word-progress.js';
 import { matchReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
@@ -136,7 +136,7 @@ async function ensureBuiltLine(index) {
   const turnText = item.pendingTurn;
   const built = await meta({ type: 'phrase-display', text: turnText }).catch(() => null);
   if (!built || built.error || built.empty) return null;
-  const builtLines = compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(punctuateLine);
+  const builtLines = compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(l => punctuateLine(expandContractions(normalizeFiller(l))));
   if (!builtLines.length) return null;
   lines.splice(index, 1, ...builtLines);
   const target = lines[index];
@@ -205,7 +205,7 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     if (built?.error && !streamed?.shown) throw Error(built.error);
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
-    lines = built?.error && streamed?.shown ? streamed.lines : built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(punctuateLine);
+    lines = built?.error && streamed?.shown ? streamed.lines : built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(l => punctuateLine(expandContractions(normalizeFiller(l))));
     if (!streamed?.shown) lines = mergeRepeats(lines).slice(0, 1);
     if (streamed?.shown && phrase) {
       // One line per pause: whatever is on screen is the whole pause.
@@ -275,7 +275,7 @@ async function start(m) {
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
   if (m.target === 'display' && sender.id === chrome.runtime.id) {
     if (m.type === 'display-line' && activeDisplay && m.streamId === activeDisplay.id && m.line) {
-      const line = punctuateLine(m.line);
+      const line = punctuateLine(expandContractions(normalizeFiller(m.line)));
       const last = activeDisplay.lines[activeDisplay.lines.length - 1];
       if (last && repeatKey(last) && repeatKey(last) === repeatKey(line)) {
         last.japanese = (last.japanese || '') + (line.japanese || '');
