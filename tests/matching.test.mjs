@@ -17,3 +17,5 @@ test('80 percent right passes at any length, accent folds count as the same soun
 test('accent-shaped mistakes still pass: voicing and long vowels fold',()=>{assert.equal(matchReading('だめ','ため').passed,true);assert.equal(matchReading('がっこう','かこう').passed,true);assert.equal(matchReading('ありがとうございます','ありがとございます').passed,true);assert.equal(matchReading('せんせい','せんせ').passed,true)});
 
 test('the flap is one sound: soft-d and l hearings of ru pass',()=>{assert.equal(matchReading('るふぃくん','どぅふぃくん').passed,true);assert.equal(matchReading('るふぃくん','ねこくん').passed,false);const romajiDirect=matchReading('るふぃくん','Rufi-kun');assert.equal(romajiDirect.passed,true);assert.equal(readingToRomaji('がっこう'),'gakkou')});
+
+test('a leading shout costs nothing and one sound off passes a short line',()=>{assert.equal(matchReading('おまってろ','あまてろ').passed,true);assert.equal(matchReading('おまってろ','まってろ').passed,true);assert.equal(matchReading('まてろ','まてら').passed,true);assert.equal(matchReading('まてろ','かぜだ').passed,false)});

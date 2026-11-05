@@ -44,16 +44,30 @@ function similarityOf(a, b) {
   if (!a || !b) return 0;
   return Math.max(0, 1 - distance(a, b) / Math.max(a.length, b.length));
 }
+const LEADING_FILLERS = ['おう', 'おお', 'ああ', 'ええ', 'うん', 'お', 'あ', 'え', 'ん'];
+export function stripLeadingFiller(reading = '') {
+  let s = String(reading);
+  for (const f of LEADING_FILLERS) {
+    if (s.startsWith(f) && s.length - f.length >= 2) { s = s.slice(f.length); break; }
+  }
+  return s;
+}
 export function matchReading(expected, actual) {
   const a = normalizeReading(expected), b = normalizeReading(actual);
   if (!a || !b) return { passed: false, similarity: 0 };
-  const kanaScore = similarityOf(a, b);
+  // A throwaway opening shout (お/あ/うん…) is not the line: it neither
+  // earns nor costs anything on either side.
+  const aCore = stripLeadingFiller(a), bCore = stripLeadingFiller(b);
+  const kanaScore = Math.max(similarityOf(a, b), similarityOf(aCore, bCore));
   // Judge in romaji too: readings converted to romaji, flap/l/hu variants
   // folded, so saying the line the way it sounds passes even when the
   // recognizer wrote it with different kana. Romaji input works directly.
   const romajiOf = x => normalizeRomaji(/[a-z]/i.test(String(x)) && !/[ぁ-ゖァ-ヶ]/.test(String(x)) ? x : readingToRomaji(x));
   const romajiScore = similarityOf(romajiOf(expected), romajiOf(actual));
   const similarity = Math.max(kanaScore, romajiScore);
-  // At least 80% right is a pass, whatever the line length.
-  return { passed: similarity >= 0.8, similarity: Math.round(similarity * 100) };
+  // At least 80% right is a pass — and on a short line, one sound off is
+  // a pass too: with three sounds, one miss is arithmetically doomed.
+  const distK = distance(aCore, bCore);
+  const shortGrace = (aCore.length <= 6 && distK <= 1);
+  return { passed: similarity >= 0.8 || shortGrace, similarity: Math.round(similarity * 100) };
 }

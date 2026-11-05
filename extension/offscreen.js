@@ -2,7 +2,7 @@
 // Meta realtime stream. HTTP Meta calls are delegated to the service worker;
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
-import { recognizedPrefix, recognizedMatches, matchCoverage, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey, pickPracticeLine, isSubstantialLine, combineLines, cleanJapanese } from './word-progress.js';
+import { recognizedPrefix, recognizedMatches, matchCoverage, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey, pickPracticeLine, isSubstantialLine, combineLines, cleanJapanese, isFillerToken } from './word-progress.js';
 import { matchReading, normalizeReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
@@ -98,7 +98,10 @@ async function openLive() {
     if (partial && phrase && ['listening', 'checking'].includes(phase)) {
       const { mask, partial: part } = recognizedMatches(phrase.tokens || [], partial.text);
       emit({ type: 'word-progress', count: mask.filter(Boolean).length, mask, part });
-      if (phase === 'listening' && mask.length && (mask.every(Boolean) || (mask[mask.length - 1] && matchCoverage(phrase.tokens || [], mask) >= 0.8))) acceptLive();
+      if (phase === 'listening' && mask.length) {
+        const kept = (phrase.tokens || []).map((tok, i) => ({ tok, m: mask[i] })).filter(x => !isFillerToken(x.tok));
+        if (kept.length ? (kept[kept.length - 1].m && matchCoverage(kept.map(x => x.tok), kept.map(x => x.m)) >= 0.8) : mask.every(Boolean)) acceptLive();
+      }
     }
   };
   ws.onerror = () => { liveFailed = true; };
@@ -223,10 +226,9 @@ async function check(segment) {
       const base = b2.similarity > a.similarity ? { heard: r.heard || '', ...b2 } : { heard: r.heard || '', ...a };
       // Also grade word by word: most of the line said in order is a pass,
       // even when the recognizer garbles the sounds between the words.
-      const coverage = Math.max(
-        matchCoverage(phrase.tokens || [], recognizedMatches(phrase.tokens || [], r.reading || '').mask),
-        matchCoverage(phrase.tokens || [], recognizedMatches(phrase.tokens || [], r.heard || '').mask)
-      );
+      const keptIdx = (phrase.tokens || []).map((tok, i) => i).filter(i => !isFillerToken(phrase.tokens[i]));
+      const coverageOf = txt => { const mk = recognizedMatches(phrase.tokens || [], txt).mask; return matchCoverage(keptIdx.map(i => phrase.tokens[i]), keptIdx.map(i => mk[i])); };
+      const coverage = Math.max(coverageOf(r.reading || ''), coverageOf(r.heard || ''));
       return { ...base, coverage, passed: base.passed || (coverage >= 0.75 && base.similarity >= 45) };
     };
     // One attempt can span several breaths: keep the pieces and judge the

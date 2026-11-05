@@ -194,3 +194,8 @@ export function combineLines(lines){
   meaning:''
  };
 }
+
+export function isFillerToken(tok){
+ const romaji=String(tok?.romaji||'').toLowerCase().replace(/[^a-z]/g,'');
+ return ['o','ou','oo','a','aa','e','un','n'].includes(romaji)||/^[おあえうんー]+$/.test(String(tok?.japanese||''));
+}
