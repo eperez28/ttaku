@@ -86,15 +86,16 @@ export function repeatKey(line){
  return (line?.romaji||'').toLowerCase().replace(/[^a-z0-9]/g,'');
 }
 export function mergeRepeats(lines){
- const out=[];
+ const out=[];const keys=[];
  for(const line of lines||[]){
-  const key=repeatKey(line);const prev=out[out.length-1];
-  if(prev&&key&&repeatKey(prev)===key){
+  const key=repeatKey(line);
+  if(out.length&&key&&keys[keys.length-1]===key){
+   const prev=out[out.length-1];
    prev.japanese=(prev.japanese||'')+(line.japanese||'');
    prev.reading=(prev.reading||'')+(line.reading||'');
    prev.romaji=(prev.romaji||'')+' '+(line.romaji||'');
    prev.tokens=[...(prev.tokens||[]),...(line.tokens||[])];
-  } else out.push({...line});
+  } else { out.push({...line}); keys.push(key); }
  }
  return out;
 }
