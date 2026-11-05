@@ -10,7 +10,7 @@ function updateStart() {
 }
 function error(message) { $('error').textContent = message || ''; $('error').hidden = !message; }
 async function load() {
-  const stored = await chrome.storage.local.get(['micReady', 'bank', 'progress', 'lastError', 'showJapanese']);
+  const stored = await chrome.storage.local.get(['micReady', 'bank', 'progress', 'lastError', 'showJapanese', 'diag']);
   micReady = !!stored.micReady; const bank = stored.bank || [], progress = stored.progress || { phrases: 0 };
   $('mic').textContent = micReady ? 'Allowed' : 'Allow access'; $('mic').classList.toggle('enabled', micReady); $('japanese-toggle').setAttribute('aria-checked', String(!!stored.showJapanese));
   error(stored.lastError); $('words').replaceChildren();
@@ -26,7 +26,12 @@ async function load() {
   [currentTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   const isPlayer = currentTab?.url?.startsWith('https://www.crunchyroll.com/watch/') || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(currentTab?.url || '');
   $('episode-title').textContent = isPlayer ? (currentTab.title || 'Video episode').replace(/ - Watch on Crunchyroll$/, '') : 'Open a Crunchyroll episode';
-  $('helper').hidden = true; $('usage').textContent = '';
+  if (stored.diag) {
+    const ago = Math.max(0, Math.round((Date.now() - (stored.diag.at || 0)) / 1000));
+    $('helper').hidden = false;
+    $('helper').textContent = 'Sound check — loudest heard: ' + (stored.diag.peak || 0).toFixed(2) + ' · clips sent: ' + (stored.diag.clips || 0) + ' · last: ' + (stored.diag.outcome || '') + ' (' + ago + 's ago)';
+  } else $('helper').hidden = true;
+  $('usage').textContent = '';
   updateStart();
 }
 $('key-save').onclick = async () => {

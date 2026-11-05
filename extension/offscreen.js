@@ -9,6 +9,15 @@ import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from '.
 let context, tabStream, micStream, sessionId, phase = 'off', phrase = null, lines = [], lineIndex = 0, tabSegments, micSegments, epoch = 0, armedAt = 0;
 let live = null, liveReady = false, liveQueue = [], liveFailed = false, liveEndTimer = null;
 const emit = event => chrome.runtime.sendMessage({ target: 'worker', type: 'audio-event', sessionId, event }).catch(() => {});
+let diag = { peak: 0, clips: 0, outcome: 'waiting to hear the video', at: Date.now() };
+let diagSavedAt = 0;
+function saveDiag(outcome) {
+  if (outcome) diag.outcome = outcome;
+  diag.at = Date.now();
+  if (diag.at - diagSavedAt < 800) return;
+  diagSavedAt = diag.at;
+  chrome.storage.local.set({ diag: { ...diag } }).catch(() => {});
+}
 const meta = message => chrome.runtime.sendMessage({ target: 'meta', ...message });
 
 async function node(stream, callback) {
@@ -65,9 +74,9 @@ async function analyze(segment) {
     if (result?.error) throw Error(result.error);
     if (ticket !== epoch) return;
     lines = result.empty ? [] : compactLines(result.lines?.length ? result.lines : [result]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || ''));
-    if (!lines.length) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'state', phase: 'empty', message: '' }); return; }
-    lineIndex = 0; emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); showLine();
-  } catch (error) { if (ticket === epoch) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'state', phase: 'error', message: error.message }); } }
+    if (!lines.length) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('Meta heard no Japanese line in that clip'); emit({ type: 'state', phase: 'empty', message: '' }); return; }
+    saveDiag('Japanese line confirmed, pausing'); lineIndex = 0; emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); showLine();
+  } catch (error) { if (ticket === epoch) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('Meta error: ' + error.message); emit({ type: 'state', phase: 'error', message: error.message }); } }
 }
 async function check(segment) {
   const ticket = ++epoch; phase = 'checking'; closeLive(true); emit({ type: 'state', phase, message: '' });
@@ -84,13 +93,17 @@ async function check(segment) {
 function resume() { epoch++; closeLive(); phase = 'watching'; phrase = null; lines = []; lineIndex = 0; tabSegments.reset(); micSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'resume' }); emit({ type: 'state', phase, message: '' }); }
 async function stop() { epoch++; closeLive(); phase = 'off'; for (const stream of [tabStream, micStream]) stream?.getTracks().forEach(t => t.stop()); tabStream = micStream = null; if (context) { await context.close(); context = null; } }
 async function start(m) {
-  await stop(); sessionId = m.sessionId;
+  await stop(); sessionId = m.sessionId; diag = { peak: 0, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; saveDiag();
   try {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
     context = new AudioContext(); await context.resume(); await context.audioWorklet.addModule('pcm-worklet.js');
     tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 3.5, silenceSeconds: .38 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 14, silenceSeconds: .85, threshold: .018 });
-    const tabSource = await node(tabStream, chunk => { if (phase === 'watching' && performance.now() > armedAt) { const segment = tabSegments.push(chunk); if (segment) analyze(segment); } }); tabSource.connect(context.destination);
+    const tabSource = await node(tabStream, chunk => {
+      for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > diag.peak) diag.peak = v; }
+      if (diag.peak > 0) saveDiag();
+      if (phase === 'watching' && performance.now() > armedAt) { const segment = tabSegments.push(chunk); if (segment) { diag.clips++; saveDiag('heard a clip, sending it to Meta…'); analyze(segment); } }
+    }); tabSource.connect(context.destination);
     await node(micStream, chunk => {
       if (phase !== 'listening' || performance.now() < armedAt) return;
       const started = micSegments.started, segment = micSegments.push(chunk);
