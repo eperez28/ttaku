@@ -57,7 +57,7 @@ export function responsesBody(instructions, input, schema, name) {
   // reasoning:'none' + a larger budget: Muse Spark can otherwise spend the
   // whole token limit on hidden reasoning and return an empty, incomplete
   // response for these mechanical conversion jobs.
-  return { model: TEXT_MODEL, instructions, input: JSON.stringify(input), store: false, stream: false, reasoning: { effort: 'none' }, text: { format: { type: 'json_schema', name, strict: true, schema } }, max_output_tokens: 4000 };
+  return { model: TEXT_MODEL, instructions, input: JSON.stringify(input), store: false, stream: false, reasoning: { effort: 'minimal' }, text: { format: { type: 'json_schema', name, strict: true, schema } }, max_output_tokens: 4000 };
 }
 export function extractResponsesText(data) {
   if (!data || typeof data !== 'object') return '';
