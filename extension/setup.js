@@ -40,7 +40,7 @@ const emptyNote = text => { const p = document.createElement('div'); p.className
 
 async function load() {
   const stored = await chrome.storage.local.get(['micReady', 'bank', 'spokenBank', 'progress', 'lastError', 'showJapanese', 'mode']);
-  if (['rehearse', 'phrase', 'karaoke'].includes(stored.mode)) practiceMode = stored.mode;
+  if (['rehearse', 'karaoke'].includes(stored.mode)) practiceMode = stored.mode;
   renderModes();
   micReady = !!stored.micReady;
   const bank = stored.bank || [];

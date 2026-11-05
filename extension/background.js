@@ -157,7 +157,7 @@ async function start(tab, mode = 'rehearse') {
 }
 
 async function switchMode(newMode) {
-  if (!['rehearse', 'phrase', 'karaoke'].includes(newMode)) return;
+  if (!['rehearse', 'karaoke'].includes(newMode)) return;
   await chrome.storage.local.set({ mode: newMode });
   const current = await session(); if (!current) return { ok: true };
   // Pause the video while Ttaku readjusts, then play again when ready.
@@ -201,7 +201,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       await structured('Return the hiragana reading of the supplied Japanese word, as data.', { transcript: 'ありがとう' }, READING_SCHEMA, 'connection_test');
       return { ok: true, models: [ASR_MODEL, TEXT_MODEL] };
     }
-    if (m.type === 'start') { const tab = await chrome.tabs.get(m.tabId); await start(tab, ['rehearse', 'phrase', 'karaoke'].includes(m.mode) ? m.mode : 'rehearse'); await chrome.storage.local.set({ lastError: '' }); return { ok: true }; }
+    if (m.type === 'start') { const tab = await chrome.tabs.get(m.tabId); await start(tab, ['rehearse', 'karaoke'].includes(m.mode) ? m.mode : 'rehearse'); await chrome.storage.local.set({ lastError: '' }); return { ok: true }; }
     if (m.type === 'permission') { await chrome.windows.create({ url: chrome.runtime.getURL('microphone.html'), type: 'popup', width: 390, height: 330 }); return { ok: true }; }
     if (m.type === 'stop') { await stop(); return { ok: true }; }
     if (m.type === 'save') {

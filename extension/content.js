@@ -53,12 +53,11 @@
    .end:hover,.end:focus-within{opacity:1}
    .end button{background:#141414e8}
    @media(prefers-reduced-motion:reduce){.fill,.controls{transition:none}}
-   </style><div class="end"><button id="stop" aria-label="Stop Taku" title="Stop Taku"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><section class="caption" id="card" hidden role="region" aria-label="Repeat the Japanese line"><div class="controls"><button id="replay" class="text" aria-label="Replay line" title="Replay line">Replay</button><button id="slow" class="text" aria-label="Replay slower" title="Replay at 0.75 speed">0.75×</button><button id="retry" class="text" aria-label="Try again" title="Try again">Try again</button><button id="commit" class="text" aria-label="Done speaking" title="Done speaking">Done</button><button id="details-toggle" class="text" aria-label="Meaning and words" title="Meaning and words">Meaning</button><button id="skip" class="text" aria-label="Skip line" title="Skip line">Skip</button></div><div class="glass"><div class="line" id="romaji"></div></div><div class="status" id="feedback" role="status" aria-live="polite"></div><div class="details" id="details" hidden><div class="translation" id="meaning"></div><div class="japanese" id="japanese" hidden></div><div class="words" id="words"></div></div></section>`;
+   </style><div class="end"><button id="stop" aria-label="Stop Taku" title="Stop Taku"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><section class="caption" id="card" hidden role="region" aria-label="Repeat the Japanese line"><div class="controls"><button id="replay" class="text" aria-label="Replay line" title="Replay line">Replay</button><button id="retry" class="text" aria-label="Try again" title="Try again">Try again</button><button id="commit" class="text" aria-label="Done speaking" title="Done speaking">Done</button><button id="details-toggle" class="text" aria-label="Meaning and words" title="Meaning and words">Meaning</button><button id="skip" class="text" aria-label="Skip line" title="Skip line">Skip</button></div><div class="glass"><div class="line" id="romaji"></div></div><div class="status" id="feedback" role="status" aria-live="polite"></div><div class="details" id="details" hidden><div class="translation" id="meaning"></div><div class="japanese" id="japanese" hidden></div><div class="words" id="words"></div></div></section>`;
    $('details-toggle').onclick=()=>{$('details').hidden=!$('details').hidden};
    $('stop').onclick=()=>chrome.runtime.sendMessage({target:'worker',type:'stop'});
    $('skip').onclick=()=>send({type:'skip'});$('retry').onclick=()=>send({type:'retry'});$('commit').onclick=()=>send({type:'commit'});
    $('replay').onclick=()=>{previousRate=video.playbackRate;video.playbackRate=1;send({type:'replay'})};
-   $('slow').onclick=()=>{previousRate=video.playbackRate;video.playbackRate=.75;send({type:'replay'})};
    chrome.storage.local.get('showJapanese').then(({showJapanese})=>{if($('japanese'))$('japanese').hidden=!showJapanese}).catch(()=>{});
    for(const event of ['keydown','pointerdown','click'])host.addEventListener(event,e=>e.stopPropagation());
   }
@@ -91,7 +90,7 @@
   $('feedback').textContent=['error','empty','retry'].includes(next)?message:'';
   if($('feedback').textContent)$('details').hidden=true;
   $('retry').hidden=!(next==='error'&&phrase);$('retry').disabled=!phrase;
-  $('replay').disabled=$('slow').disabled=!phrase||['processing','replay','passed'].includes(next);$('commit').disabled=next!=='listening';$('details-toggle').disabled=!phrase;
+  $('replay').disabled=!phrase||['processing','replay','passed'].includes(next);$('commit').disabled=next!=='listening';$('details-toggle').disabled=!phrase;
   if(next==='processing'){$('details').hidden=true;$('card').hidden=true;wordEls=[]}
   if(next==='watching'){phrase=null;cardAnchor='bottom';$('details').hidden=true;wordEls=[]}
  }
@@ -151,23 +150,11 @@
   if(m.type==='resume'){phase='watching';cueKey='';video.playbackRate=previousRate;video.play().catch(()=>state('error','Press Play to continue.'));return}
   if(m.type==='mode-pause'){phase='switching';video.pause();if($('card'))$('card').hidden=true;return}
   if(m.type==='set-mode'){mode=m.mode;phrase=null;wordEls=[];phase=mode==='karaoke'?'karaoke':'watching';mount();$('card').hidden=true;$('details').hidden=true;video.playbackRate=previousRate;video.play().catch(()=>{});reply({ok:true});return}
-  if(m.type==='seek-back'){if(video){video.currentTime=Math.max(0,video.currentTime-(m.seconds||10));video.play().catch(()=>{});send({type:'phrase-armed'})}return}
+  if(m.type==='seek-back'){if(video){video.currentTime=Math.max(0,video.currentTime-(m.seconds||10));video.play().catch(()=>{});}return}
   if(m.type==='karaoke-phrase'){phrase=m.phrase;mode='karaoke';phase='karaoke';cardAnchor='top';mount();$('card').hidden=false;showWords();position();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;return}
   if(m.type==='replay'){replayEnd=segmentEnd;video.currentTime=segmentStart;state('replay');video.play().catch(()=>state('error','Couldn’t replay the line.'));return}
  });
  chrome.storage.onChanged.addListener(changes=>{if(changes.showJapanese&&$('japanese'))$('japanese').hidden=!changes.showJapanese.newValue});
- // While practicing: Caps Lock switches to Phrase (or replays the phrase
- // when already there). Modes are otherwise picked in the popup. 
- document.addEventListener('keydown',e=>{
-  if(!active||e.repeat)return;
-  const target=e.target;
-  if(target&&(target.tagName==='INPUT'||target.tagName==='TEXTAREA'||target.isContentEditable))return;
-  if(e.key==='CapsLock'){
-   e.preventDefault();
-   if(mode==='phrase'){ if(phase==='watching')send({type:'phrase-repeat'}); }
-   else send({type:'set-mode',mode:'phrase'});
-  }
- },true);
  document.addEventListener('fullscreenchange',()=>{if(active)mount()});window.addEventListener('resize',()=>{if(active)position()});
  window.addEventListener('pagehide',()=>{if(active)chrome.runtime.sendMessage({target:'worker',type:'stop'}).catch(()=>{})});
 })();

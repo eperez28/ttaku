@@ -6,7 +6,7 @@ import { recognizedPrefix, compactLines, isPauseWorthy } from './word-progress.j
 import { matchReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
-let context, tabStream, micStream, sessionId, mode = 'rehearse', oneShot = false, phase = 'off', phrase = null, lines = [], lineIndex = 0, tabSegments, micSegments, epoch = 0, armedAt = 0;
+let context, tabStream, micStream, sessionId, mode = 'rehearse', phase = 'off', phrase = null, lines = [], lineIndex = 0, tabSegments, micSegments, epoch = 0, armedAt = 0;
 let live = null, liveReady = false, liveQueue = [], liveFailed = false, liveEndTimer = null;
 const emit = event => chrome.runtime.sendMessage({ target: 'worker', type: 'audio-event', sessionId, event }).catch(() => {});
 let diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() };
@@ -153,7 +153,7 @@ async function check(segment) {
 function resume() { epoch++; closeLive(); phase = 'watching'; phrase = null; lines = []; lineIndex = 0; tabSegments.reset(); micSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'resume' }); emit({ type: 'state', phase, message: '' }); }
 async function stop() { epoch++; closeLive(); phase = 'off'; for (const stream of [tabStream, micStream]) stream?.getTracks().forEach(t => t.stop()); tabStream = micStream = null; if (context) { await context.close(); context = null; } }
 async function start(m) {
-  await stop(); sessionId = m.sessionId; mode = ['rehearse', 'phrase', 'karaoke'].includes(m.mode) ? m.mode : 'rehearse'; oneShot = false; diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; recentPeak = 0; saveDiag();
+  await stop(); sessionId = m.sessionId; mode = ['rehearse', 'karaoke'].includes(m.mode) ? m.mode : 'rehearse'; diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; recentPeak = 0; saveDiag();
   try {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
@@ -167,7 +167,7 @@ async function start(m) {
         if (segment) {
           diag.clips++; saveDiag('heard a clip, sending it to Meta…');
           if (mode === 'karaoke') analyzeKaraoke(segment);
-          else if (mode === 'rehearse' || oneShot) { oneShot = false; analyze(segment); }
+          else if (mode === 'rehearse') { emit({ type: 'pause', duration: segment.duration, delaySeconds: .35 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); analyze(segment, true); }
         }
       }
     }); tabSource.connect(context.destination);
@@ -196,18 +196,15 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (m.type === 'replay' && phrase) { epoch++; closeLive(); phase = 'replay'; emit({ type: 'replay' }); return { ok: true }; }
     if (m.type === 'replay-ended') { listen(); return { ok: true }; }
     if (m.type === 'set-mode') {
-      epoch++; closeLive(); mode = m.mode; oneShot = false; phrase = null; lines = []; lineIndex = 0;
+      epoch++; closeLive(); mode = m.mode; phrase = null; lines = []; lineIndex = 0;
       tabSegments?.reset(); micSegments?.reset();
       phase = mode === 'karaoke' ? 'karaoke' : 'watching'; armedAt = performance.now() + 250;
       emit({ type: 'state', phase, message: '' }); return { ok: true };
     }
     if (m.type === 'karaoke-cue' && mode === 'karaoke') { karaokeCaption(m.text); return { ok: true }; }
-    if (m.type === 'phrase-repeat' && mode === 'phrase' && phase === 'watching') { emit({ type: 'seek-back', seconds: 10 }); return { ok: true }; }
-    if (m.type === 'phrase-armed' && mode === 'phrase') { oneShot = true; tabSegments.reset(); armedAt = performance.now() + 60; return { ok: true }; }
     if (m.type === 'commit' || m.type === 'caption-boundary') {
-      if (mode === 'phrase' && m.type === 'commit' && phase === 'watching') { emit({ type: 'seek-back', seconds: 10 }); return { ok: true }; }
       if (mode === 'karaoke' && phase === 'karaoke' && m.type === 'caption-boundary') { const s = tabSegments.finish(); if (s) analyzeKaraoke(s); }
-      else if (phase === 'watching') { const s = tabSegments.finish(); if (s) { diag.clips++; if (mode === 'rehearse' || oneShot) { const wasOneShot = oneShot; oneShot = false; if (m.type === 'caption-boundary' && mode === 'rehearse' && !wasOneShot) { emit({ type: 'pause', duration: s.duration, delaySeconds: 0 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); analyze(s, true); } else analyze(s); } } } else if (phase === 'listening' && m.type === 'commit') { const s = micSegments.finish(); if (s) check(s); } return { ok: true };
+      else if (phase === 'watching') { const s = tabSegments.finish(); if (s) { diag.clips++; if (mode === 'rehearse') { if (m.type === 'caption-boundary') { emit({ type: 'pause', duration: s.duration, delaySeconds: 0 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); } analyze(s, m.type === 'caption-boundary'); } } } else if (phase === 'listening' && m.type === 'commit') { const s = micSegments.finish(); if (s) check(s); } return { ok: true };
     }
     if (m.type === 'video-paused' && phase === 'watching') { tabSegments.reset(); armedAt = Infinity; }
     if (m.type === 'video-playing' && phase === 'watching') { tabSegments.reset(); armedAt = performance.now() + 120; }
