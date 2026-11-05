@@ -64,6 +64,10 @@
   }
   const fs=document.fullscreenElement,parent=fs&&fs.tagName!=='VIDEO'?fs:document.documentElement;if(host.parentNode!==parent)parent.append(host);position();
  }
+ function renderWords(){
+  $('words').replaceChildren();
+  for(const word of phrase.words||[]){const b=document.createElement('button');b.textContent=word.romaji;b.title=word.meaning;b.onclick=async()=>{await chrome.runtime.sendMessage({target:'worker',type:'save',word,context:{sentence:phrase.japanese,romaji:phrase.romaji,meaning:phrase.meaning,title:document.title,url:phraseURL,time:segmentStart}});b.textContent='✓ '+word.romaji};$('words').append(b)}
+ }
  function showWords(){
   wordEls=[];$('romaji').replaceChildren();
   const tokens=phrase.tokens?.length?phrase.tokens:phrase.romaji.split(/\s+/).filter(Boolean).map(romaji=>({romaji}));
@@ -139,8 +143,10 @@
   if(m.type==='state'){state(m.phase,m.message);return}
   if(m.type==='phrase'){
    phrase=m.phrase;mount();showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;
-   for(const word of phrase.words||[]){const b=document.createElement('button');b.textContent=word.romaji;b.title=word.meaning;b.onclick=async()=>{await chrome.runtime.sendMessage({target:'worker',type:'save',word,context:{sentence:phrase.japanese,romaji:phrase.romaji,meaning:phrase.meaning,title:document.title,url:phraseURL,time:segmentStart}});b.textContent='✓ '+word.romaji};$('words').append(b)}return;
+   renderWords();return;
   }
+  if(m.type==='interim'){cardAnchor='top';mount();$('card').hidden=false;const el=$('romaji');el.replaceChildren();const span=document.createElement('span');span.className='pending';span.textContent=m.japanese;el.append(span);position();return}
+  if(m.type==='phrase-details'){if(phrase){phrase.meaning=m.meaning;phrase.words=m.words||[];$('meaning').textContent=phrase.meaning;renderWords()}return}
   if(m.type==='word-progress'){progress(m.count);return}
   if(m.type==='result'){if(m.passed){progress(wordEls.length);state('passed')}return}
   if(m.type==='resume'){phase='watching';cueKey='';video.playbackRate=previousRate;video.play().catch(()=>state('error','Press Play to continue.'));return}

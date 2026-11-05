@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {buildHandshake,isHandshakeAck,cumulativeTranscript,transcribeRequest,responsesBody,extractResponsesText,responseProblem,parseEventStream,isSilentClip,wavInfo,sanitizeServerMessage,validatePhraseOutput,validateReadingOutput,mapMetaError,extractTranscript,META_WS} from '../extension/meta-protocol.js';
+import {buildHandshake,isHandshakeAck,cumulativeTranscript,transcribeRequest,responsesBody,extractResponsesText,responseProblem,parseEventStream,isSilentClip,wavInfo,sanitizeServerMessage,validatePhraseOutput,validateFastPhraseOutput,validateEnrichOutput,validateReadingOutput,mapMetaError,extractTranscript,META_WS} from '../extension/meta-protocol.js';
 const READING_SCHEMA_SHAPE={type:'object',properties:{reading:{type:'string'}},required:['reading'],additionalProperties:false};
 import {wav24Base64,pcm24Bytes} from '../extension/audio-utils.js';
 import {recognizedPrefix} from '../extension/word-progress.js';
@@ -21,3 +21,6 @@ test('event-stream answers are rebuilt into a response',()=>{const sse='data: {"
 
 test('silent or tiny clips are kept away from Meta, speech is not',()=>{const silent=new Uint8Array(44+24000*2);const view=new DataView(silent.buffer);view.setUint32(24,24000,true);assert.equal(isSilentClip(silent),true);const loud=new Uint8Array(44+24000*2);const v2=new DataView(loud.buffer);v2.setUint32(24,24000,true);for(let i=0;i<24000;i++)v2.setInt16(44+i*2,12000,true);assert.equal(isSilentClip(loud),false);assert.equal(wavInfo(loud).duration,1)});
 test('server messages are shortened and never carry credentials',()=>{assert.equal(sanitizeServerMessage('Bearer abcdefghijklmnopqrstuvwxyz0123456789 bad clip').includes('abcdefghijklmnopqrstuvwxyz'),false);assert.ok(sanitizeServerMessage('x'.repeat(300)).length<=180)});
+
+test('fast phrase output is validated and padded with empty details',()=>{const out=validateFastPhraseOutput({lines:[{japanese:'行くぞ',reading:'いくぞ',romaji:'iku zo',tokens:[{japanese:'行く',reading:'いく',romaji:'iku'}]}]});assert.equal(out.lines[0].meaning,'');assert.deepEqual(out.lines[0].words,[]);assert.throws(()=>validateFastPhraseOutput({lines:[{japanese:'x'}]}))});
+test('enrichment output is validated',()=>{assert.equal(validateEnrichOutput({meaning:'Let us go',words:[]}).meaning,'Let us go');assert.throws(()=>validateEnrichOutput({meaning:1,words:[]}))});

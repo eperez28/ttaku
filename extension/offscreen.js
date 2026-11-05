@@ -82,7 +82,13 @@ async function acceptLive() {
   setTimeout(() => { if (ticket === epoch) advance(); }, 500);
 }
 function listen(phaseName = 'listening') { phase = 'listening'; micSegments.reset(); armedAt = performance.now() + 450; saveDiag('paused, waiting for you to repeat it'); emit({ type: 'word-progress', count: 0 }); emit({ type: 'state', phase: phaseName, message: '' }); openLive(); }
-function showLine() { phrase = lines[lineIndex]; emit({ type: 'phrase', phrase, lineIndex, lineCount: lines.length }); listen(); }
+function showLine() {
+  phrase = lines[lineIndex]; emit({ type: 'phrase', phrase, lineIndex, lineCount: lines.length }); listen();
+  const shown = phrase;
+  meta({ type: 'phrase-enrich', japanese: shown.japanese, romaji: shown.romaji }).then(r => {
+    if (r && !r.error && phrase === shown) { shown.meaning = r.meaning || ''; shown.words = r.words || []; emit({ type: 'phrase-details', meaning: shown.meaning, words: shown.words }); }
+  }).catch(() => {});
+}
 function advance() { closeLive(); if (lineIndex + 1 < lines.length) { epoch++; lineIndex++; showLine(); } else resume(); }
 async function analyze(segment, prePaused = false) {
   const ticket = ++epoch; phase = 'processing'; const startedAt = performance.now();
@@ -102,6 +108,7 @@ async function analyze(segment, prePaused = false) {
     saveDiag('Japanese line confirmed, pausing');
     if (!prePaused) emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
     emit({ type: 'state', phase: 'processing', message: 'Getting this line…' });
+    emit({ type: 'interim', japanese: text });
     const built = await meta({ type: 'phrase-text', text });
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
