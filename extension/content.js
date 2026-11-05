@@ -137,6 +137,15 @@
   if(m.type==='replay'){replayEnd=segmentEnd;video.currentTime=segmentStart;state('replay');video.play().catch(()=>state('error','Couldn’t replay the line.'));return}
  });
  chrome.storage.onChanged.addListener(changes=>{if(changes.showJapanese&&$('japanese'))$('japanese').hidden=!changes.showJapanese.newValue});
+ // Phrase mode trigger: a single Shift press rewinds and replays the phrase.
+ // (Chrome commands cannot bind a bare Shift, so this lives in the page.)
+ document.addEventListener('keydown',e=>{
+  if(!active||mode!=='phrase'||phase!=='watching')return;
+  if(e.key!=='Shift'||e.metaKey||e.ctrlKey||e.altKey||e.repeat)return;
+  const target=e.target;
+  if(target&&(target.tagName==='INPUT'||target.tagName==='TEXTAREA'||target.isContentEditable))return;
+  send({type:'phrase-repeat'});
+ });
  document.addEventListener('fullscreenchange',()=>{if(active)mount()});window.addEventListener('resize',()=>{if(active)position()});
  window.addEventListener('pagehide',()=>{if(active)chrome.runtime.sendMessage({target:'worker',type:'stop'}).catch(()=>{})});
 })();
