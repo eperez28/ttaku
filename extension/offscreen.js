@@ -2,7 +2,7 @@
 // Meta realtime stream. HTTP Meta calls are delegated to the service worker;
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
-import { recognizedPrefix, recognizedMatches, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey } from './word-progress.js';
+import { recognizedPrefix, recognizedMatches, matchCoverage, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey } from './word-progress.js';
 import { matchReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
@@ -69,7 +69,7 @@ function finalizeSourceLive() {
   try { if (sourceLive.readyState === WebSocket.OPEN) sourceLive.send(JSON.stringify({ type: 'endStream' })); } catch {}
   return new Promise(resolve => {
     sourceWaiter = resolve;
-    setTimeout(() => { if (sourceWaiter === resolve) finishSource(sourceText); }, 700);
+    setTimeout(() => { if (sourceWaiter === resolve) finishSource(sourceText); }, 400);
   });
 }
 function closeSourceLive() { sourceLive = null; sourceReady = false; sourceQueue = []; sourceWaiter = null; }
@@ -106,7 +106,7 @@ async function openLive() {
     if (partial && phrase && ['listening', 'checking'].includes(phase)) {
       const { mask, partial: part } = recognizedMatches(phrase.tokens || [], partial.text);
       emit({ type: 'word-progress', count: mask.filter(Boolean).length, mask, part });
-      if (phase === 'listening' && mask.length && mask.every(Boolean)) acceptLive();
+      if (phase === 'listening' && mask.length && (mask.every(Boolean) || (mask[mask.length - 1] && matchCoverage(phrase.tokens || [], mask) >= 0.8))) acceptLive();
     }
   };
   ws.onerror = () => { liveFailed = true; };
@@ -186,24 +186,26 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     if (!prePaused) emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
     emit({ type: 'state', phase: 'processing', message: 'Getting this line…' });
     // A clip that may hold more than one speaker gets diarized, and each
-    // speaker's turn becomes its own practice line — never a blend. But
-    // diarization races the clock: it may inform the display, never block it.
+    // speaker's turn becomes its own practice line — never a blend. The
+    // display stream starts immediately; diarization only wins if it lands
+    // before the first line is on screen.
     const jpChars = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
     const multiClue = segment.duration > 4 || jpChars > 24 || (text.match(/[。！？]/g) || []).length >= 2;
-    if (multiClue) {
-      let turns = null;
-      const diarPromise = meta({ type: 'diarize', audioBase64: wav24Base64(segment.chunks, context.sampleRate) }).catch(() => null);
+    const diarPromise = multiClue ? meta({ type: 'diarize', audioBase64: wav24Base64(segment.chunks, context.sampleRate) }).catch(() => null) : null;
+    activeDisplay = { id: ticket, lines: [], shown: false };
+    const builtPromise = meta({ type: 'phrase-display-stream', text, streamId: ticket }).catch(e => ({ error: e.message }));
+    if (diarPromise) {
       const raced = await Promise.race([diarPromise, new Promise(r => setTimeout(() => r('late'), 800))]);
-      if (raced && raced !== 'late' && !raced.error && Array.isArray(raced.turns)) turns = raced.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text));
       if (ticket !== epoch) return;
-      if (turns && turns.length >= 2) {
+      const turns = raced && raced !== 'late' && !raced.error && Array.isArray(raced.turns) ? raced.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)) : null;
+      if (turns && turns.length >= 2 && !activeDisplay.shown) {
+        activeDisplay = null;
         lines = turns.slice(0, 1).map(tn => ({ pendingTurn: tn.text, speaker: tn.speaker || '', japanese: '', reading: '', romaji: '', tokens: [], words: [], meaning: '' }));
         lineIndex = 0; saveDiag('split into ' + turns.length + ' speaker turns');
         await showLine(); return;
       }
     }
-    activeDisplay = { id: ticket, lines: [], shown: false };
-    const built = await meta({ type: 'phrase-display-stream', text, streamId: ticket }).catch(e => ({ error: e.message }));
+    const built = await builtPromise;
     const streamed = activeDisplay; activeDisplay = null;
     if (built?.error && !streamed?.shown) throw Error(built.error);
     if (built?.error) throw Error(built.error);

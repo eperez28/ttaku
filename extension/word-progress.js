@@ -128,3 +128,9 @@ export function normalizeFiller(line){
  const tokens=line.tokens?.map((tok,i)=>i===0?{...tok,romaji:'nnn'+((tok.romaji||'').includes(',')?',':'')}:tok);
  return {...line,romaji,tokens};
 }
+
+export function matchCoverage(tokens,mask){
+ let total=0,hit=0;
+ (tokens||[]).forEach((tok,i)=>{const len=(tok.reading||tok.romaji||'').length||1;total+=len;if(mask?.[i])hit+=len});
+ return total?hit/total:0;
+}
