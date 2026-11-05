@@ -2,7 +2,7 @@
 // Meta realtime stream. HTTP Meta calls are delegated to the service worker;
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
-import { recognizedPrefix, recognizedMatches, matchCoverage, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey, pickPracticeLine, isSubstantialLine } from './word-progress.js';
+import { recognizedPrefix, recognizedMatches, matchCoverage, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey, pickPracticeLine, isSubstantialLine, combineLines } from './word-progress.js';
 import { matchReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
@@ -212,7 +212,7 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
     lines = built?.error && streamed?.shown ? streamed.lines : built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(l => punctuateLine(expandContractions(normalizeFiller(l))));
-    if (!streamed?.shown) { const pick = pickPracticeLine(mergeRepeats(lines)); lines = pick ? [pick] : []; }
+    if (!streamed?.shown) { const combined = combineLines(lines); lines = combined ? [combined] : []; }
     if (streamed?.shown && phrase) {
       // One line per pause: whatever is on screen is the whole pause.
       lines = [phrase]; lineIndex = 0;
@@ -288,19 +288,24 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (m.type === 'romaji-preview' && activeDisplay && m.streamId === activeDisplay.id && !activeDisplay.shown && m.romaji) { emit({ type: 'romaji-preview', romaji: m.romaji }); return; }
     if (m.type === 'display-line' && activeDisplay && m.streamId === activeDisplay.id && m.line) {
       const line = punctuateLine(expandContractions(normalizeFiller(m.line)));
-      if (!activeDisplay.shown && !isSubstantialLine(line)) return; // fragment first: wait for the real line
+      if (activeDisplay.shown && phrase) {
+        // More of what was heard: grow the block on screen, wrapped.
+        phrase.japanese = (phrase.japanese || '') + (line.japanese || '');
+        phrase.reading = (phrase.reading || '') + (line.reading || '');
+        phrase.romaji = (phrase.romaji || '') + ' ' + (line.romaji || '');
+        phrase.tokens = [...(phrase.tokens || []), ...(line.tokens || [])];
+        emit({ type: 'phrase-update', phrase });
+        return;
+      }
       const last = activeDisplay.lines[activeDisplay.lines.length - 1];
       if (last && repeatKey(last) && repeatKey(last) === repeatKey(line)) {
         last.japanese = (last.japanese || '') + (line.japanese || '');
         last.reading = (last.reading || '') + (line.reading || '');
         last.romaji = (last.romaji || '') + ' ' + (line.romaji || '');
         last.tokens = [...(last.tokens || []), ...(line.tokens || [])];
-        if (activeDisplay.shown && phrase === last) emit({ type: 'phrase-update', phrase: last });
-      } else if (!activeDisplay.shown) {
-        activeDisplay.lines.push(line);
-        lines = activeDisplay.lines;
-        activeDisplay.shown = true; lineIndex = 0; showLine();
-      }
+      } else activeDisplay.lines.push(line);
+      const combined = combineLines(activeDisplay.lines);
+      if (combined && isSubstantialLine(combined)) { lines = [combined]; activeDisplay.shown = true; lineIndex = 0; showLine(); }
     }
     return;
   }

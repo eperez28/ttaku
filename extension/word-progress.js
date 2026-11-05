@@ -26,7 +26,8 @@ export function japaneseChars(text=''){
 // Judge whether a heard line is worth stopping the show for: enough actual
 // Japanese and enough spoken time that it is a line, not a grunt or a laugh.
 export function isPauseWorthy(text='',duration=0){
- return japaneseChars(text)>=3 && duration>=0.7;
+ if(japaneseChars(text)>=3 && duration>=0.7)return true;
+ return japaneseChars(text)>=2 && duration>=0.8 && /[！!。]/.test(String(text));
 }
 
 const KANA3={sha:'しゃ',shu:'しゅ',sho:'しょ',cha:'ちゃ',chu:'ちゅ',cho:'ちょ',chi:'ち',tsu:'つ',shi:'し',jya:'じゃ',jyu:'じゅ',jyo:'じょ',ja:'じゃ',ju:'じゅ',jo:'じょ',ji:'じ',rya:'りゃ',ryu:'りゅ',ryo:'りょ',gya:'ぎゃ',gyu:'ぎゅ',gyo:'ぎょ',kya:'きゃ',kyu:'きゅ',kyo:'きょ',nya:'にゃ',nyu:'にゅ',nyo:'にょ',hya:'ひゃ',hyu:'ひゅ',hyo:'ひょ',bya:'びゃ',byu:'びゅ',byo:'びょ',pya:'ぴゃ',pyu:'ぴゅ',pyo:'ぴょ',mya:'みゃ',myu:'みゅ',myo:'みょ'};
@@ -145,4 +146,19 @@ export function isSubstantialLine(line){
 // leading interjection ("Oi,", "Hey,") with the real sentence behind it.
 export function pickPracticeLine(lines){
  return (lines||[]).find(isSubstantialLine)||null;
+}
+
+// Everything heard in the clip is the practice text: all of its lines
+// joined into one block that wraps on screen.
+export function combineLines(lines){
+ const usable=(lines||[]).filter(l=>l&&l.romaji);
+ if(!usable.length)return null;
+ return {
+  japanese:usable.map(l=>l.japanese||'').join(''),
+  reading:usable.map(l=>l.reading||'').join(''),
+  romaji:usable.map(l=>l.romaji||'').join(' '),
+  tokens:usable.flatMap(l=>l.tokens||[]),
+  words:usable[0].words||[],
+  meaning:''
+ };
 }

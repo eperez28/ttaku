@@ -1,4 +1,4 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import {recognizedPrefix,compactLines,isPauseWorthy,romajiToKana,displayTokens,recognizedMatches,matchCoverage,punctuateLine,mergeRepeats,expandContractions,normalizeFiller,pickPracticeLine,isSubstantialLine} from '../extension/word-progress.js';
+import {test} from 'node:test';import assert from 'node:assert/strict';import {recognizedPrefix,compactLines,isPauseWorthy,romajiToKana,displayTokens,recognizedMatches,matchCoverage,punctuateLine,mergeRepeats,expandContractions,normalizeFiller,pickPracticeLine,isSubstantialLine,combineLines} from '../extension/word-progress.js';
 const tokens=[{japanese:'大丈夫',reading:'だいじょうぶ',romaji:'daijoubu'},{japanese:'です',reading:'です',romaji:'desu'},{japanese:'か',reading:'か',romaji:'ka?'}];
 test('partial recognition fills only complete words in order',()=>{assert.equal(recognizedPrefix(tokens,'大'),0);assert.equal(recognizedPrefix(tokens,'大丈夫'),1);assert.equal(recognizedPrefix(tokens,'大丈夫です'),2);assert.equal(recognizedPrefix(tokens,'大丈夫ですか？'),3)});
 test('kana transcription also matches the target reading',()=>assert.equal(recognizedPrefix(tokens,'ダイジョウブです'),2));
@@ -22,3 +22,5 @@ test('a leading filler sound reads as nnn, not the letter N',()=>{const out=norm
 test('live coverage counts matched sounds across the line',()=>{const toks=[{reading:'あ'},{reading:'いう'},{reading:'えお'}];assert.ok(Math.abs(matchCoverage(toks,[true,true,false])-0.6)<0.001);assert.equal(matchCoverage(toks,[true,true,true]),1)});
 
 test('the practice line is the real sentence, not the shout before it',()=>{const lines=[{japanese:'おい、',reading:'おい',romaji:'Oi,'},{japanese:'俺の船を見ろ',reading:'おれのふねをみろ',romaji:'ore no fune wo miro'}];assert.equal(pickPracticeLine(lines).romaji,'ore no fune wo miro');assert.equal(pickPracticeLine([lines[0]]),null);assert.equal(isSubstantialLine(lines[1]),true)});
+
+test('everything heard displays as one wrapped block, not pieces',()=>{const lines=[{japanese:'おい、',reading:'おい',romaji:'Oi,',tokens:[{romaji:'Oi,'}]},{japanese:'俺の船を見ろ',reading:'おれのふねをみろ',romaji:'ore no fune wo miro',tokens:[{romaji:'ore'},{romaji:'miro'}]}];const all=combineLines(lines);assert.equal(all.romaji,'Oi, ore no fune wo miro');assert.equal(all.tokens.length,3);assert.equal(combineLines([]),null)});
