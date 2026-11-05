@@ -161,6 +161,12 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (m.type === 'retry' && phrase) { epoch++; listen('listening'); return { ok: true }; }
     if (m.type === 'replay' && phrase) { epoch++; closeLive(); phase = 'replay'; emit({ type: 'replay' }); return { ok: true }; }
     if (m.type === 'replay-ended') { listen(); return { ok: true }; }
+    if (m.type === 'set-mode') {
+      epoch++; closeLive(); mode = m.mode; oneShot = false; phrase = null; lines = []; lineIndex = 0;
+      tabSegments?.reset(); micSegments?.reset();
+      phase = mode === 'karaoke' ? 'karaoke' : 'watching'; armedAt = performance.now() + 250;
+      emit({ type: 'state', phase, message: '' }); return { ok: true };
+    }
     if (m.type === 'karaoke-cue' && mode === 'karaoke') { karaokeCaption(m.text); return { ok: true }; }
     if (m.type === 'phrase-repeat' && mode === 'phrase' && phase === 'watching') { emit({ type: 'seek-back', seconds: 10 }); return { ok: true }; }
     if (m.type === 'phrase-armed' && mode === 'phrase') { oneShot = true; tabSegments.reset(); armedAt = performance.now() + 60; return { ok: true }; }

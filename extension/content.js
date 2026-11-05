@@ -132,19 +132,26 @@
   if(m.type==='word-progress'){progress(m.count);return}
   if(m.type==='result'){if(m.passed){progress(wordEls.length);state('passed')}return}
   if(m.type==='resume'){phase='watching';cueKey='';video.playbackRate=previousRate;video.play().catch(()=>state('error','Press Play to continue.'));return}
+  if(m.type==='mode-pause'){phase='switching';video.pause();if($('card'))$('card').hidden=true;return}
+  if(m.type==='set-mode'){mode=m.mode;phrase=null;wordEls=[];phase=mode==='karaoke'?'karaoke':'watching';mount();$('card').hidden=true;$('details').hidden=true;video.playbackRate=previousRate;video.play().catch(()=>{});reply({ok:true});return}
   if(m.type==='seek-back'){if(video){video.currentTime=Math.max(0,video.currentTime-(m.seconds||10));video.play().catch(()=>{});send({type:'phrase-armed'})}return}
   if(m.type==='karaoke-phrase'){phrase=m.phrase;mode='karaoke';phase='karaoke';mount();$('card').hidden=false;$('card').style.top='16px';$('card').style.bottom='auto';showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;return}
   if(m.type==='replay'){replayEnd=segmentEnd;video.currentTime=segmentStart;state('replay');video.play().catch(()=>state('error','Couldn’t replay the line.'));return}
  });
  chrome.storage.onChanged.addListener(changes=>{if(changes.showJapanese&&$('japanese'))$('japanese').hidden=!changes.showJapanese.newValue});
- // Phrase mode trigger: a single Shift press rewinds and replays the phrase.
- // (Chrome commands cannot bind a bare Shift, so this lives in the page.)
+ // While practicing: Caps Lock switches to Phrase (or replays the phrase
+ // when already there); Shift switches to Karaoke, and back when already there.
  document.addEventListener('keydown',e=>{
-  if(!active||mode!=='phrase'||phase!=='watching')return;
-  if(e.key!=='Shift'||e.metaKey||e.ctrlKey||e.altKey||e.repeat)return;
+  if(!active||e.repeat)return;
   const target=e.target;
   if(target&&(target.tagName==='INPUT'||target.tagName==='TEXTAREA'||target.isContentEditable))return;
-  send({type:'phrase-repeat'});
+  if(e.key==='CapsLock'){
+   e.preventDefault();
+   if(mode==='phrase'){ if(phase==='watching')send({type:'phrase-repeat'}); }
+   else send({type:'set-mode',mode:'phrase'});
+  } else if(e.key==='Shift'&&!e.metaKey&&!e.ctrlKey&&!e.altKey){
+   send({type:'set-mode',mode:mode==='karaoke'?'rehearse':'karaoke'});
+  }
  },true);
  document.addEventListener('fullscreenchange',()=>{if(active)mount()});window.addEventListener('resize',()=>{if(active)position()});
  window.addEventListener('pagehide',()=>{if(active)chrome.runtime.sendMessage({target:'worker',type:'stop'}).catch(()=>{})});

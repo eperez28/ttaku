@@ -19,16 +19,9 @@ function currentStep() {
 }
 function updateStart() {
   const button = $('start');
-  button.classList.toggle('stop', !!running); renderModes();
-  if (starting) { button.disabled = true; button.textContent = 'Starting…'; return; }
-  const config = {
-    running: ['Stop practice', false],
-    key: ['Add API key', false],
-    mic: ['Allow microphone', false],
-    episode: ['Open an episode', true],
-    ready: ['Start practice', false]
-  }[currentStep()];
-  button.textContent = config[0]; button.disabled = config[1];
+  button.setAttribute('aria-checked', String(!!running));
+  button.disabled = starting || (!running && currentStep() === 'episode');
+  renderModes();
 }
 function showError(message) { const text = message ? friendlyError(message) : ''; $('error').textContent = text; $('error').hidden = !text; }
 function keyStatus(message) { $('key-status').textContent = message; }
@@ -113,9 +106,13 @@ $('key-test').onclick = async () => {
 };
 $('japanese-toggle').onclick = async () => { const v = $('japanese-toggle').getAttribute('aria-checked') !== 'true'; await chrome.storage.local.set({ showJapanese: v }); $('japanese-toggle').setAttribute('aria-checked', String(v)); };
 function renderModes() {
-  for (const b of document.querySelectorAll('#modes button')) { b.setAttribute('aria-checked', String(b.dataset.mode === practiceMode)); b.disabled = !!running || starting; }
+  for (const b of document.querySelectorAll('#modes button')) { b.setAttribute('aria-checked', String(b.dataset.mode === practiceMode)); b.disabled = starting; }
 }
-for (const b of document.querySelectorAll('#modes button')) b.onclick = async () => { practiceMode = b.dataset.mode; await chrome.storage.local.set({ mode: practiceMode }); renderModes(); };
+for (const b of document.querySelectorAll('#modes button')) b.onclick = async () => {
+  practiceMode = b.dataset.mode; renderModes();
+  await chrome.storage.local.set({ mode: practiceMode });
+  if (running) { const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'set-mode', mode: practiceMode }); if (r?.error) showError(r.error); }
+};
 function showView(view) {
   for (const name of ['practice', 'words', 'settings']) $(name + '-view').hidden = name !== view;
   $('heading').textContent = { practice: 'Ttaku', words: 'Word bank', settings: 'Settings' }[view];
