@@ -33,9 +33,9 @@
    .glass::before{content:"";position:absolute;inset:-4px -10px;background:#0002;backdrop-filter:blur(7px);mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);border-radius:12px;pointer-events:none}
    .line{position:relative;font:var(--caption-weight) 38px/1.3 var(--caption-font);display:flex;flex-wrap:wrap;justify-content:center;gap:.18em .24em}
    .word{position:relative;display:inline-block;white-space:pre}
-   .outline{color:#fff;-webkit-text-stroke:.115em #000;paint-order:stroke fill;text-shadow:var(--caption-shadow)}
+   .outline{color:#fff;-webkit-text-stroke:.2em #000;paint-order:stroke fill;text-shadow:var(--caption-shadow)}
    .fill{position:absolute;inset:0 auto auto -3px;width:0;height:110%;overflow:hidden;transition:width 130ms ease-out;pointer-events:none}
-   .ink{display:block;width:max-content;padding-left:3px;color:#ffd83d;-webkit-text-stroke:.115em #000;paint-order:stroke fill;text-shadow:var(--caption-shadow)}
+   .ink{display:block;width:max-content;padding-left:3px;color:#ffd83d;-webkit-text-stroke:.2em #000;paint-order:stroke fill;text-shadow:var(--caption-shadow)}
    .word.done .fill{width:calc(100% + 8px)}
    .pending{color:#fff;text-shadow:var(--caption-shadow);font-size:.65em}
    .controls,.details,.status{position:absolute;left:50%;transform:translateX(-50%);width:max-content;max-width:min(82vw,420px)}
@@ -145,7 +145,6 @@
    phrase=m.phrase;mount();showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;
    renderWords();return;
   }
-  if(m.type==='interim'){cardAnchor='top';mount();$('card').hidden=false;const el=$('romaji');el.replaceChildren();const span=document.createElement('span');span.className='pending';span.textContent=m.japanese;el.append(span);position();return}
   if(m.type==='phrase-details'){if(phrase){phrase.meaning=m.meaning;phrase.words=m.words||[];$('meaning').textContent=phrase.meaning;renderWords()}return}
   if(m.type==='word-progress'){progress(m.count);return}
   if(m.type==='result'){if(m.passed){progress(wordEls.length);state('passed')}return}

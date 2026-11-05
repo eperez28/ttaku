@@ -108,7 +108,6 @@ async function analyze(segment, prePaused = false) {
     saveDiag('Japanese line confirmed, pausing');
     if (!prePaused) emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
     emit({ type: 'state', phase: 'processing', message: 'Getting this line…' });
-    emit({ type: 'interim', japanese: text });
     const built = await meta({ type: 'phrase-text', text });
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
