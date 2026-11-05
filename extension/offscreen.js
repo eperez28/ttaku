@@ -10,6 +10,38 @@ let context, tabStream, micStream, sessionId, phase = 'off', phrase = null, line
 let live = null, liveReady = false, liveQueue = [], liveFailed = false, liveEndTimer = null;
 let apiKeyCache = null;
 let helpTimer = null;
+let sourceLive = null, sourceReady = false, sourceQueue = [], sourceFailed = false;
+function closeSourceLive() { const ws = sourceLive; sourceLive = null; sourceReady = false; sourceQueue = []; if (ws) { try { ws.close(); } catch {} } }
+function openSourceLive() {
+  if (sourceLive || sourceFailed || !apiKeyCache) return;
+  let ws;
+  try { ws = new WebSocket(META_WS); } catch { sourceFailed = true; return; }
+  sourceLive = ws; ws.binaryType = 'arraybuffer';
+  ws.onopen = () => { try { ws.send(JSON.stringify({ ...buildHandshake(apiKeyCache), mode: 'ENDPOINTING' })); } catch {} };
+  ws.onmessage = e => {
+    if (ws !== sourceLive || typeof e.data !== 'string') return;
+    let m; try { m = JSON.parse(e.data); } catch { return; }
+    if (isHandshakeAck(m)) { sourceReady = true; for (const f of sourceQueue) { try { ws.send(f); } catch {} } sourceQueue = []; return; }
+    if (m.type === 'error') { sourceFailed = true; closeSourceLive(); return; }
+    // Meta heard a voice stop — that is a line ending, whatever else is
+    // making noise. Cut the clip right there instead of waiting for the
+    // whole soundtrack to go quiet.
+    if (m.type === 'speechEnd' && phase === 'watching') {
+      const s = tabSegments?.finish();
+      if (s) { diag.clips++; saveDiag('Meta heard the line end, pausing'); emit({ type: 'pause', duration: s.duration, delaySeconds: .15 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); analyze(s, true); }
+    }
+  };
+  ws.onerror = () => { sourceFailed = true; };
+  ws.onclose = () => { if (ws === sourceLive) { sourceLive = null; sourceReady = false; sourceQueue = []; } };
+}
+function streamSource(chunk) {
+  if (sourceFailed || phase === 'off') return;
+  if (!sourceLive) { openSourceLive(); if (!sourceLive) return; }
+  const bytes = pcm24Bytes(chunk, context.sampleRate);
+  const frame = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
+  if (sourceReady && sourceLive?.readyState === WebSocket.OPEN) { try { sourceLive.send(frame); } catch { sourceFailed = true; } }
+  else if (sourceQueue.length < 240) sourceQueue.push(frame);
+}
 const emit = event => chrome.runtime.sendMessage({ target: 'worker', type: 'audio-event', sessionId, event }).catch(() => {});
 let diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() };
 let recentPeak = 0;
@@ -200,18 +232,19 @@ async function check(segment) {
     else { phase = 'retry'; emit({ type: 'struggle-help' }); emit({ type: 'state', phase, message: result.heard ? 'Try that line again.' : 'I couldn’t hear you.' }); setTimeout(() => { if (ticket === epoch) listen('retry'); }, 1300); }
   } catch (error) { if (ticket === epoch) { phase = 'error'; saveDiag('repeat check failed: ' + error.message); emit({ type: 'state', phase, message: error.message }); } }
 }
-function resume() { epoch++; closeLive(); phase = 'watching'; phrase = null; lines = []; lineIndex = 0; tabSegments.reset(); micSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'resume' }); emit({ type: 'state', phase, message: '' }); }
-async function stop() { epoch++; closeLive(); apiKeyCache = null; phase = 'off'; for (const stream of [tabStream, micStream]) stream?.getTracks().forEach(t => t.stop()); tabStream = micStream = null; if (context) { await context.close(); context = null; } }
+function resume() { epoch++; closeLive(); openSourceLive(); phase = 'watching'; phrase = null; lines = []; lineIndex = 0; tabSegments.reset(); micSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'resume' }); emit({ type: 'state', phase, message: '' }); }
+async function stop() { epoch++; closeLive(); closeSourceLive(); apiKeyCache = null; phase = 'off'; for (const stream of [tabStream, micStream]) stream?.getTracks().forEach(t => t.stop()); tabStream = micStream = null; if (context) { await context.close(); context = null; } }
 async function start(m) {
   await stop(); sessionId = m.sessionId; apiKeyCache = null; getApiKey(); diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() }; recentPeak = 0; saveDiag();
   try {
     tabStream = await navigator.mediaDevices.getUserMedia({ audio: { mandatory: { chromeMediaSource: 'tab', chromeMediaSourceId: m.streamId } }, video: false });
     micStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: true }, video: false });
     context = new AudioContext(); await context.resume(); await context.audioWorklet.addModule('pcm-worklet.js');
-    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 6, silenceSeconds: .3, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 20, silenceSeconds: .6, threshold: .01 });
+    tabSegments = new Segmenter(context.sampleRate, { maxSeconds: 6, silenceSeconds: .25, threshold: .005, peakThreshold: .04 }); micSegments = new Segmenter(context.sampleRate, { maxSeconds: 20, silenceSeconds: .6, threshold: .01 });
     const tabSource = await node(tabStream, chunk => {
       for (let i = 0; i < chunk.length; i += 8) { const v = Math.abs(chunk[i]); if (v > recentPeak) recentPeak = v; }
       saveDiag();
+      streamSource(chunk);
       if (phase === 'watching' && performance.now() > armedAt) {
         const segment = tabSegments.push(chunk);
         if (segment) {
@@ -227,13 +260,13 @@ async function start(m) {
       if (segment) check(segment);
     });
     tabStream.getAudioTracks().forEach(t => t.onended = () => { stop(); emit({ type: 'state', phase: 'error', message: 'Tab sharing ended. Restart Ttaku to reconnect.' }); });
-    phase = 'watching'; armedAt = performance.now() + 200; return { ok: true };
+    phase = 'watching'; armedAt = performance.now() + 200; openSourceLive(); return { ok: true };
   } catch (error) { await stop(); throw error; }
 }
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
   if (m.target !== 'audio' || sender.id !== chrome.runtime.id) return;
   const run = async () => {
-    if (m.type === 'key-changed') { closeLive(); liveFailed = true; return { ok: true }; }
+    if (m.type === 'key-changed') { closeLive(); closeSourceLive(); sourceFailed = false; apiKeyCache = null; getApiKey(); liveFailed = true; return { ok: true }; }
     if (m.type === 'start') return start(m);
     if (m.type === 'stop') { await stop(); return { ok: true }; }
     if (m.sessionId && m.sessionId !== sessionId) return;
