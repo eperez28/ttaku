@@ -19,3 +19,12 @@ export function compactLines(lines,maxCharacters=90){
  }
  return result;
 }
+
+export function japaneseChars(text=''){
+ return (String(text).match(/[\u3040-\u30ff\u3400-\u9fff]/g)||[]).length;
+}
+// Judge whether a heard line is worth stopping the show for: enough actual
+// Japanese and enough spoken time that it is a line, not a grunt or a laugh.
+export function isPauseWorthy(text='',duration=0){
+ return japaneseChars(text)>=3 && duration>=0.7;
+}

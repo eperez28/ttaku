@@ -2,7 +2,7 @@
 // Meta realtime stream. HTTP Meta calls are delegated to the service worker;
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
-import { recognizedPrefix, compactLines } from './word-progress.js';
+import { recognizedPrefix, compactLines, isPauseWorthy } from './word-progress.js';
 import { matchReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
@@ -84,7 +84,7 @@ async function acceptLive() {
 function listen(phaseName = 'listening') { phase = 'listening'; micSegments.reset(); armedAt = performance.now() + 450; saveDiag('paused, waiting for you to repeat it'); emit({ type: 'word-progress', count: 0 }); emit({ type: 'state', phase: phaseName, message: '' }); openLive(); }
 function showLine() { phrase = lines[lineIndex]; emit({ type: 'phrase', phrase, lineIndex, lineCount: lines.length }); listen(); }
 function advance() { closeLive(); if (lineIndex + 1 < lines.length) { epoch++; lineIndex++; showLine(); } else resume(); }
-async function analyze(segment) {
+async function analyze(segment, prePaused = false) {
   const ticket = ++epoch; phase = 'processing'; const startedAt = performance.now();
   // Fast path: one ASR call decides the pause. The romaji is built *while*
   // the video is already paused, instead of making the pause wait for it.
@@ -93,9 +93,14 @@ async function analyze(segment) {
     if (heard?.error) throw Error(heard.error);
     if (ticket !== epoch) return;
     const text = (heard?.text || '').trim();
-    if (!text || !/[\u3040-\u30ff\u3400-\u9fff]/.test(text)) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('Meta heard no Japanese line in that clip'); emit({ type: 'state', phase: 'empty', message: '' }); return; }
+    if (!isPauseWorthy(text, segment.duration)) {
+      // Not a line worth stopping for: a grunt, a laugh, or a fragment.
+      phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; saveDiag('not a pause-worthy line, letting it play');
+      if (prePaused) emit({ type: 'resume' }); else emit({ type: 'state', phase: 'empty', message: '' });
+      return;
+    }
     saveDiag('Japanese line confirmed, pausing');
-    emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
+    if (!prePaused) emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
     emit({ type: 'state', phase: 'processing', message: 'Getting this line…' });
     const built = await meta({ type: 'phrase-text', text });
     if (built?.error) throw Error(built.error);
@@ -196,7 +201,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (m.type === 'commit' || m.type === 'caption-boundary') {
       if (mode === 'phrase' && m.type === 'commit' && phase === 'watching') { emit({ type: 'seek-back', seconds: 10 }); return { ok: true }; }
       if (mode === 'karaoke' && phase === 'karaoke' && m.type === 'caption-boundary') { const s = tabSegments.finish(); if (s) analyzeKaraoke(s); }
-      else if (phase === 'watching') { const s = tabSegments.finish(); if (s) { diag.clips++; if (mode === 'rehearse' || oneShot) { oneShot = false; analyze(s); } } } else if (phase === 'listening' && m.type === 'commit') { const s = micSegments.finish(); if (s) check(s); } return { ok: true };
+      else if (phase === 'watching') { const s = tabSegments.finish(); if (s) { diag.clips++; if (mode === 'rehearse' || oneShot) { const wasOneShot = oneShot; oneShot = false; if (m.type === 'caption-boundary' && mode === 'rehearse' && !wasOneShot) { emit({ type: 'pause', duration: s.duration, delaySeconds: 0 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); analyze(s, true); } else analyze(s); } } } else if (phase === 'listening' && m.type === 'commit') { const s = micSegments.finish(); if (s) check(s); } return { ok: true };
     }
     if (m.type === 'video-paused' && phase === 'watching') { tabSegments.reset(); armedAt = Infinity; }
     if (m.type === 'video-playing' && phase === 'watching') { tabSegments.reset(); armedAt = performance.now() + 120; }
