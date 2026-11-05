@@ -87,11 +87,22 @@ export function cumulativeTranscript(message) {
 export function transcribeRequest(mode = 'PUSH_TO_TALK') {
   return { mode, model: ASR_MODEL, audioEncoding: 'WAV', languageBias: ['Japanese'] };
 }
-export function responsesBody(instructions, input, schema, name) {
-  // reasoning:'none' + a larger budget: Muse Spark can otherwise spend the
+export function responsesBody(instructions, input, schema, name, stream = false) {
+  // reasoning minimal + a larger budget: Muse Spark can otherwise spend the
   // whole token limit on hidden reasoning and return an empty, incomplete
   // response for these mechanical conversion jobs.
-  return { model: TEXT_MODEL, instructions, input: JSON.stringify(input), store: false, stream: false, reasoning: { effort: 'minimal' }, text: { format: { type: 'json_schema', name, strict: true, schema } }, max_output_tokens: 4000 };
+  return { model: TEXT_MODEL, instructions, input: JSON.stringify(input), store: false, stream, reasoning: { effort: 'minimal' }, text: { format: { type: 'json_schema', name, strict: true, schema } }, max_output_tokens: 4000 };
+}
+// Pull every *completed* line out of a partially streamed structured answer,
+// so the first line can be shown while the rest is still generating.
+export function extractDisplayLines(partial = '') {
+  const found = [];
+  const pattern = /"japanese"\s*:\s*"((?:\\.|[^"\\])*)"\s*,\s*"reading"\s*:\s*"((?:\\.|[^"\\])*)"\s*,\s*"romaji"\s*:\s*"((?:\\.|[^"\\])*)"/g;
+  let m;
+  while ((m = pattern.exec(String(partial)))) {
+    try { found.push({ japanese: JSON.parse('"' + m[1] + '"'), reading: JSON.parse('"' + m[2] + '"'), romaji: JSON.parse('"' + m[3] + '"') }); } catch {}
+  }
+  return found;
 }
 export function extractResponsesText(data) {
   if (!data || typeof data !== 'object') return '';

@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {buildHandshake,isHandshakeAck,cumulativeTranscript,transcribeRequest,responsesBody,extractResponsesText,responseProblem,parseEventStream,isSilentClip,wavInfo,sanitizeServerMessage,validatePhraseOutput,validateFastPhraseOutput,validateEnrichOutput,validateReadingOutput,mapMetaError,extractTranscript,META_WS} from '../extension/meta-protocol.js';
+import {buildHandshake,isHandshakeAck,cumulativeTranscript,transcribeRequest,responsesBody,extractResponsesText,extractDisplayLines,responseProblem,parseEventStream,isSilentClip,wavInfo,sanitizeServerMessage,validatePhraseOutput,validateFastPhraseOutput,validateEnrichOutput,validateReadingOutput,mapMetaError,extractTranscript,META_WS} from '../extension/meta-protocol.js';
 const READING_SCHEMA_SHAPE={type:'object',properties:{reading:{type:'string'}},required:['reading'],additionalProperties:false};
 import {wav24Base64,pcm24Bytes} from '../extension/audio-utils.js';
 import {recognizedPrefix} from '../extension/word-progress.js';
@@ -24,3 +24,5 @@ test('server messages are shortened and never carry credentials',()=>{const fake
 
 test('fast phrase output is validated and padded with empty details',()=>{const out=validateFastPhraseOutput({lines:[{japanese:'行くぞ',reading:'いくぞ',romaji:'iku zo',tokens:[{japanese:'行く',reading:'いく',romaji:'iku'}]}]});assert.equal(out.lines[0].meaning,'');assert.deepEqual(out.lines[0].words,[]);assert.throws(()=>validateFastPhraseOutput({lines:[{japanese:'x'}]}))});
 test('enrichment output is validated',()=>{assert.equal(validateEnrichOutput({meaning:'Let us go',words:[]}).meaning,'Let us go');assert.throws(()=>validateEnrichOutput({meaning:1,words:[]}))});
+
+test('streamed answers yield lines as soon as each romaji closes',()=>{const partial='{"lines":[{"japanese":"行くぞ","reading":"いくぞ","romaji":"iku zo"},{"japanese":"大丈';const found=extractDisplayLines(partial);assert.equal(found.length,1);assert.equal(found[0].romaji,'iku zo');assert.equal(extractDisplayLines('{"lines":[]}').length,0)});

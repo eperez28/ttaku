@@ -9,6 +9,7 @@ import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from '.
 let context, tabStream, micStream, sessionId, phase = 'off', phrase = null, lines = [], lineIndex = 0, tabSegments, micSegments, epoch = 0, armedAt = 0;
 let live = null, liveReady = false, liveQueue = [], liveFailed = false, liveEndTimer = null;
 let apiKeyCache = null;
+let activeDisplay = null;
 let sourceLive = null, sourceReady = false, sourceQueue = [], sourceText = '', sourceWaiter = null, sourceFailed = false;
 const emit = event => chrome.runtime.sendMessage({ target: 'worker', type: 'audio-event', sessionId, event }).catch(() => {});
 let diag = { peak: 0, rms: 0, started: false, armed: false, clips: 0, outcome: 'waiting to hear the video', at: Date.now() };
@@ -162,15 +163,26 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     saveDiag('Japanese line confirmed, pausing');
     if (!prePaused) emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
     emit({ type: 'state', phase: 'processing', message: 'Getting this line…' });
-    const built = await meta({ type: 'phrase-display', text });
+    activeDisplay = { id: ticket, lines: [], shown: false };
+    const built = await meta({ type: 'phrase-display-stream', text, streamId: ticket }).catch(e => ({ error: e.message }));
+    const streamed = activeDisplay; activeDisplay = null;
+    if (built?.error && !streamed?.shown) throw Error(built.error);
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
-    lines = built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(punctuateLine);
+    lines = built?.error && streamed?.shown ? streamed.lines : built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(punctuateLine);
+    if (streamed?.shown && phrase) {
+      // Lines already on screen stay; adopt the final list as the queue,
+      // keeping the exact object the user is looking at.
+      const current = phrase;
+      const idx = lines.findIndex(l => l.japanese === current.japanese);
+      if (idx >= 0) { lines[idx] = current; lineIndex = idx; } else lineIndex = 0;
+    }
     if (!lines.length) { phase = 'error'; saveDiag('could not build a line from that'); emit({ type: 'state', phase: 'error', message: 'I couldn’t make out that line.' }); return; }
-    lineIndex = 0; showLine();
+    if (!streamed?.shown) { lineIndex = 0; showLine(); }
     // Precise token alignment arrives just behind the display and swaps in
     // without disturbing words already filled.
-    const shown = lines[0];
+    const shown = phrase;
+    if (!shown) return;
     meta({ type: 'phrase-text', text }).then(r => {
       if (!r || r.error || r.empty || phrase !== shown) return;
       const full = (r.lines?.length ? r.lines : [r]).map(l => ({ ...l }));
@@ -227,6 +239,15 @@ async function start(m) {
   } catch (error) { await stop(); throw error; }
 }
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
+  if (m.target === 'display' && sender.id === chrome.runtime.id) {
+    if (m.type === 'display-line' && activeDisplay && m.streamId === activeDisplay.id && m.line) {
+      const line = punctuateLine(m.line);
+      activeDisplay.lines.push(line);
+      lines = activeDisplay.lines;
+      if (!activeDisplay.shown) { activeDisplay.shown = true; lineIndex = 0; showLine(); }
+    }
+    return;
+  }
   if (m.target !== 'audio' || sender.id !== chrome.runtime.id) return;
   const run = async () => {
     if (m.type === 'key-changed') { closeLive(); liveFailed = true; return { ok: true }; }
