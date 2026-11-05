@@ -3,6 +3,7 @@
  let active=false,video=null,host=null,shadow=null,phase='off',mode='rehearse',phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
  const $=id=>shadow?.getElementById(id);
  const send=event=>chrome.runtime.sendMessage({target:'worker',type:'player-event',event}).catch(()=>{});
+ const pauseAll=()=>{for(const v of document.querySelectorAll('video')){if(!v.paused)v.pause()}};
  const findVideo=()=>[...document.querySelectorAll('video')].filter(v=>v.getBoundingClientRect().width>100).sort((a,b)=>b.clientWidth*b.clientHeight-a.clientWidth*a.clientHeight)[0];
  const captionSelector='.bmpui-ui-subtitle-label,.bmpui-subtitle-region-container,.shaka-text-container,[data-testid="subtitle"],[data-testid="subtitles"],.vjs-text-track-display';
  function position(){
@@ -114,16 +115,17 @@
   if(m.type==='start'){
    if(!findVideo())return;cleanup();video=findVideo();active=true;mode=m.mode||'rehearse';state(mode==='karaoke'?'karaoke':'watching');video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay);
    guard=setInterval(()=>{
-    if(!active)return;if(!video.isConnected){cleanup();chrome.runtime.sendMessage({target:'worker',type:'stop'});return}
+    if(!active)return;
+    if(!video.isConnected){const fresh=findVideo();if(fresh&&fresh!==video){video.removeEventListener('pause',onPause);video.removeEventListener('playing',onPlay);video=fresh;video.addEventListener('pause',onPause);video.addEventListener('playing',onPlay)}else if(!fresh){cleanup();chrome.runtime.sendMessage({target:'worker',type:'stop'});return}}
     if(phase==='replay'&&video.currentTime>=replayEnd){video.pause();video.playbackRate=previousRate;phase='listening';send({type:'replay-ended'})}
-    else if(!['watching','replay','off','karaoke'].includes(phase)&&!video.paused)video.pause();
+    else if(!['watching','replay','off','karaoke'].includes(phase))pauseAll();
     checkCue();checkKaraokeCues();
    },60);
    observer=new MutationObserver(()=>{if(active){position();checkCue()}});observer.observe(video.parentElement||document.documentElement,{subtree:true,childList:true,characterData:true});
    video.play().catch(error=>{if(active&&phase==='watching'&&error.name!=='AbortError')state('error','Press Play to begin.')});reply({ok:true});return;
   }
   if(m.type==='stop'){cleanup();reply({ok:true});return}if(!active)return;
-  if(m.type==='pause'){phase='processing';video.pause();segmentEnd=Math.max(0,video.currentTime-(m.delaySeconds||0));segmentStart=Math.max(0,segmentEnd-m.duration);phraseURL=location.href;reply({ok:true});return}
+  if(m.type==='pause'){phase='processing';pauseAll();segmentEnd=Math.max(0,video.currentTime-(m.delaySeconds||0));segmentStart=Math.max(0,segmentEnd-m.duration);phraseURL=location.href;reply({ok:true});return}
   if(m.type==='state'){state(m.phase,m.message);return}
   if(m.type==='phrase'){
    phrase=m.phrase;mount();showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;
