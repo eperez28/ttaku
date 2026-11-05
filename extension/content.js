@@ -88,7 +88,7 @@
   if($('feedback').textContent)$('details').hidden=true;
   $('retry').hidden=!(next==='error'&&phrase);$('retry').disabled=!phrase;
   $('replay').disabled=$('slow').disabled=!phrase||['processing','replay','passed'].includes(next);$('commit').disabled=next!=='listening';$('details-toggle').disabled=!phrase;
-  if(next==='processing'){$('details').hidden=true;$('romaji').replaceChildren();const pending=document.createElement('span');pending.className='pending';pending.textContent='…';$('romaji').append(pending);wordEls=[]}
+  if(next==='processing'){$('details').hidden=true;$('card').hidden=true;wordEls=[]}
   if(next==='watching'){phrase=null;cardAnchor='bottom';$('details').hidden=true;wordEls=[]}
  }
  function onPause(){if(active&&phase==='watching')send({type:'video-paused'})}
