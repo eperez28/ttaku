@@ -2,7 +2,7 @@
 // Meta realtime stream. HTTP Meta calls are delegated to the service worker;
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
-import { recognizedPrefix, recognizedMatches, matchCoverage, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey, pickPracticeLine, isSubstantialLine, combineLines } from './word-progress.js';
+import { recognizedPrefix, recognizedMatches, matchCoverage, compactLines, isPauseWorthy, punctuateLine, expandContractions, normalizeFiller, mergeRepeats, repeatKey, pickPracticeLine, isSubstantialLine, combineLines, cleanJapanese } from './word-progress.js';
 import { matchReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
@@ -192,21 +192,66 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     const jpChars = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
     const multiClue = segment.duration > 4 || jpChars > 24 || (text.match(/[。！？]/g) || []).length >= 2;
     const diarPromise = multiClue ? meta({ type: 'diarize', audioBase64: wav24Base64(segment.chunks, context.sampleRate) }).catch(() => null) : null;
-    activeDisplay = { id: ticket, lines: [], shown: false };
+    activeDisplay = { id: ticket, lines: [], shown: false, heldLines: [], speakerDecision: multiClue ? 'pending' : 'single' };
+    const streamRef = activeDisplay;
     const builtPromise = meta({ type: 'phrase-display-stream', text, streamId: ticket }).catch(e => ({ error: e.message }));
+    let lateDiar = null;
+    const foldIntoPhrase = line => {
+      if (!phrase) return;
+      phrase.japanese = (phrase.japanese || '') + (line.japanese || '');
+      phrase.reading = (phrase.reading || '') + (line.reading || '');
+      phrase.romaji = (phrase.romaji || '') + ' ' + (line.romaji || '');
+      phrase.tokens = [...(phrase.tokens || []), ...(line.tokens || [])];
+    };
+    const flushHeld = (allowedText = null) => {
+      const held = streamRef.heldLines.splice(0);
+      if (!streamRef.shown || !phrase || !held.length) return;
+      let changed = false;
+      for (const heldLine of held) {
+        if (allowedText && !cleanJapanese(allowedText).includes(cleanJapanese(heldLine.japanese || ''))) continue;
+        foldIntoPhrase(heldLine); changed = true;
+      }
+      if (changed) emit({ type: 'phrase-update', phrase });
+    };
+    const applySpeakerDecision = async result => {
+      const turns = result && !result.error && Array.isArray(result.turns) ? result.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)) : null;
+      if (!turns || !turns.length) { streamRef.speakerDecision = 'single'; flushHeld(); return; }
+      const firstSpeaker = turns[0].speaker;
+      const hasChange = turns.some(tn => tn.speaker !== firstSpeaker);
+      if (!hasChange) { streamRef.speakerDecision = 'single'; flushHeld(); return; }
+      streamRef.speakerDecision = 'multi';
+      const run = [];
+      for (const tn of turns) { if (run.length && tn.speaker !== firstSpeaker) break; run.push(tn); }
+      const allowedText = run.map(tn => tn.text).join('');
+      flushHeld(allowedText);
+      // If the line on screen already swallowed the next speaker, cut it back.
+      if (phrase?.japanese && cleanJapanese(allowedText) && !cleanJapanese(allowedText).includes(cleanJapanese(phrase.japanese)) && cleanJapanese(phrase.japanese).length > cleanJapanese(allowedText).length) {
+        const builtTurn = await meta({ type: 'phrase-display', text: run[0].text }).catch(() => null);
+        const replacement = builtTurn && !builtTurn.error && !builtTurn.empty ? combineLines((builtTurn.lines || []).map(l => punctuateLine(expandContractions(normalizeFiller(l))))) : null;
+        if (replacement && streamRef.shown && phrase) { phrase = replacement; lines = [replacement]; emit({ type: 'phrase-update', phrase }); }
+      }
+      streamRef.heldLines = [];
+    };
     if (diarPromise) {
       const raced = await Promise.race([diarPromise, new Promise(r => setTimeout(() => r('late'), 800))]);
       if (ticket !== epoch) return;
-      const turns = raced && raced !== 'late' && !raced.error && Array.isArray(raced.turns) ? raced.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)) : null;
-      if (turns && turns.length >= 2 && !activeDisplay.shown) {
-        activeDisplay = null;
-        const firstTurn = turns.find(tn => (tn.text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length >= 3) || turns[0];
-        lines = [{ pendingTurn: firstTurn.text, speaker: firstTurn.speaker || '', japanese: '', reading: '', romaji: '', tokens: [], words: [], meaning: '' }];
-        lineIndex = 0; saveDiag('split into ' + turns.length + ' speaker turns');
-        await showLine(); return;
+      if (raced === 'late') {
+        lateDiar = diarPromise;
+        setTimeout(() => { if (streamRef.speakerDecision === 'pending') { streamRef.speakerDecision = 'single'; flushHeld(); } }, 4000);
+      } else {
+        const turns = raced && !raced.error && Array.isArray(raced.turns) ? raced.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)) : null;
+        if (turns && turns.length >= 2 && !activeDisplay.shown) {
+          activeDisplay = null;
+          const firstTurn = turns.find(tn => (tn.text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length >= 3) || turns[0];
+          lines = [{ pendingTurn: firstTurn.text, speaker: firstTurn.speaker || '', japanese: '', reading: '', romaji: '', tokens: [], words: [], meaning: '' }];
+          lineIndex = 0; saveDiag('split into ' + turns.length + ' speaker turns');
+          await showLine(); return;
+        }
+        if (turns) await applySpeakerDecision(raced);
       }
     }
     const built = await builtPromise;
+    if (lateDiar) lateDiar.then(result => { if (streamRef.speakerDecision === 'pending' || streamRef.speakerDecision === 'multi') applySpeakerDecision(result); });
     const streamed = activeDisplay; activeDisplay = null;
     if (built?.error && !streamed?.shown) throw Error(built.error);
     if (built?.error) throw Error(built.error);
@@ -289,7 +334,10 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (m.type === 'display-line' && activeDisplay && m.streamId === activeDisplay.id && m.line) {
       const line = punctuateLine(expandContractions(normalizeFiller(m.line)));
       if (activeDisplay.shown && phrase) {
-        // More of what was heard: grow the block on screen, wrapped.
+        // Later sentences wait until diarization says whose they are.
+        if (activeDisplay.speakerDecision === 'pending') { activeDisplay.heldLines.push(line); return; }
+        if (activeDisplay.speakerDecision === 'multi') return; // another speaker: not this pause
+        // Same speaker: grow the block on screen, wrapped.
         phrase.japanese = (phrase.japanese || '') + (line.japanese || '');
         phrase.reading = (phrase.reading || '') + (line.reading || '');
         phrase.romaji = (phrase.romaji || '') + ' ' + (line.romaji || '');
