@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {normalizeReading,matchReading} from '../helper/matching.mjs';
+import {normalizeReading,matchReading} from '../extension/matching.js';
 import {Segmenter,wavBase64} from '../extension/audio-utils.js';
 test('Japanese reading normalizes katakana and punctuation',()=>assert.equal(normalizeReading('ダイジョウブ。'),'だいじょうぶ'));
 test('empty speech and unrelated speech never pass',()=>{assert.equal(matchReading('だいじょうぶ','').passed,false);assert.equal(matchReading('だいじょうぶ','ありがとう').passed,false)});

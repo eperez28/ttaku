@@ -1,58 +1,53 @@
-import {CONFIG} from './config.js';
-const $=id=>document.getElementById(id);
-let running=null,currentTab=null,micReady=false,helperReady=false;
+const $ = id => document.getElementById(id);
+let running = null, currentTab = null, micReady = false, hasKey = false;
+function keyStatus(message) { $('key-status').textContent = message; }
 function updateStart() {
   const button = $('start');
-  const isEpisode = currentTab?.url?.startsWith('https://www.crunchyroll.com/watch/');
+  const isEpisode = currentTab?.url?.startsWith('https://www.crunchyroll.com/watch/') || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(currentTab?.url || '');
   button.classList.toggle('stop', !!running);
-  button.disabled = !running && helperReady && micReady && !isEpisode;
-  button.textContent = running ? 'Stop practice'
-    : !helperReady ? 'Check connection'
-    : !micReady ? 'Allow microphone'
-    : 'Start practice';
+  button.disabled = !running && hasKey && micReady && !isEpisode;
+  button.textContent = running ? 'Stop practice' : !hasKey ? 'Save API key first' : !micReady ? 'Allow microphone' : 'Start practice';
 }
-function error(message){$('error').textContent=message||'';$('error').hidden=!message}
-async function load(){
-  const stored=await chrome.storage.local.get(['micReady','bank','progress','lastError','showJapanese']);
-  micReady=!!stored.micReady;const bank=stored.bank||[],progress=stored.progress||{phrases:0};
-  $('mic').textContent=micReady?'Allowed':'Allow access';$('mic').classList.toggle('enabled',micReady);$('japanese-toggle').setAttribute('aria-checked',String(!!stored.showJapanese));
-  error(stored.lastError);$('words').replaceChildren();
-  if(!bank.length){const p=document.createElement('div');p.className='empty';p.textContent='Words you save during practice will appear here.';$('words').append(p)}
-  for(const word of bank){
-    const row=document.createElement('div');row.className='word';const head=document.createElement('div');const strong=document.createElement('strong');strong.textContent=word.romaji;const reading=document.createElement('span');reading.className='reading';reading.textContent=word.japanese;head.append(strong,reading);
-    const definition=document.createElement('div');definition.className='definition';definition.textContent=word.meaning;const context=document.createElement('small');context.textContent=word.context?.romaji||'';definition.append(context);const a=document.createElement('a');a.textContent='↗';a.title='Open the episode';if(word.context?.url?.startsWith('https://www.crunchyroll.com/'))a.href=word.context.url;a.target='_blank';row.append(head,definition,a);$('words').append(row)
+function error(message) { $('error').textContent = message || ''; $('error').hidden = !message; }
+async function load() {
+  const stored = await chrome.storage.local.get(['micReady', 'bank', 'progress', 'lastError', 'showJapanese']);
+  micReady = !!stored.micReady; const bank = stored.bank || [], progress = stored.progress || { phrases: 0 };
+  $('mic').textContent = micReady ? 'Allowed' : 'Allow access'; $('mic').classList.toggle('enabled', micReady); $('japanese-toggle').setAttribute('aria-checked', String(!!stored.showJapanese));
+  error(stored.lastError); $('words').replaceChildren();
+  if (!bank.length) { const p = document.createElement('div'); p.className = 'empty'; p.textContent = 'Words you save during practice will appear here.'; $('words').append(p); }
+  for (const word of bank) {
+    const row = document.createElement('div'); row.className = 'word'; const head = document.createElement('div'); const strong = document.createElement('strong'); strong.textContent = word.romaji; const reading = document.createElement('span'); reading.className = 'reading'; reading.textContent = word.japanese; head.append(strong, reading);
+    const definition = document.createElement('div'); definition.className = 'definition'; definition.textContent = word.meaning; const context = document.createElement('small'); context.textContent = word.context?.romaji || ''; definition.append(context); const a = document.createElement('a'); a.textContent = '↗'; a.title = 'Open the episode'; if (word.context?.url?.startsWith('https://www.crunchyroll.com/')) a.href = word.context.url; a.target = '_blank'; row.append(head, definition, a); $('words').append(row);
   }
-  $('export').hidden=!bank.length;$('progress').textContent=progress.phrases+' '+(progress.phrases===1?'line':'lines')+' practiced';
-  const current=await chrome.runtime.sendMessage({target:'worker',type:'status'});running=current?.session;
-  [currentTab]=await chrome.tabs.query({active:true,lastFocusedWindow:true});
-  const isCrunchyroll=currentTab?.url?.startsWith('https://www.crunchyroll.com/watch/');
-  $('episode-title').textContent = isCrunchyroll
-    ? (currentTab.title || 'Crunchyroll episode').replace(/ - Watch on Crunchyroll$/, '')
-    : 'Open a Crunchyroll episode';
-  try {
-    const response = await fetch(CONFIG.base + '/status', {
-      headers: { 'X-Taku-Token': CONFIG.token },
-      signal: AbortSignal.timeout(2500),
-    });
-    if (!response.ok) throw Error();
-    const { usage } = await response.json();
-    helperReady = true;
-    $('usage').textContent = '$' + usage.estimatedUSD.toFixed(2) + ' today';
-  } catch {
-    helperReady = false;
-    $('usage').textContent = '';
-  }
-  $('helper').hidden = helperReady;
-  $('helper').textContent = helperReady ? '' : 'Open Start Taku.command on your Mac, then check the connection.';
+  $('export').hidden = !bank.length; $('progress').textContent = progress.phrases + ' ' + (progress.phrases === 1 ? 'line' : 'lines') + ' practiced';
+  const current = await chrome.runtime.sendMessage({ target: 'worker', type: 'status' }); running = current?.session;
+  const keyState = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-status' }); hasKey = !!keyState?.hasKey;
+  keyStatus(hasKey ? 'Key saved for this browser session. It must be re-entered after Chrome restarts or the extension reloads.' : 'No key saved. It is kept only in this browser session and must be re-entered after Chrome restarts or the extension reloads.');
+  [currentTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
+  const isPlayer = currentTab?.url?.startsWith('https://www.crunchyroll.com/watch/') || /^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//.test(currentTab?.url || '');
+  $('episode-title').textContent = isPlayer ? (currentTab.title || 'Video episode').replace(/ - Watch on Crunchyroll$/, '') : 'Open a Crunchyroll episode';
+  $('helper').hidden = true; $('usage').textContent = '';
   updateStart();
 }
+$('key-save').onclick = async () => {
+  const value = $('meta-key').value; $('meta-key').value = '';
+  const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-save', key: value });
+  if (r?.error) { keyStatus(r.error); return; }
+  hasKey = true; keyStatus('Key saved for this browser session. It must be re-entered after Chrome restarts or the extension reloads.'); updateStart();
+};
+$('key-clear').onclick = async () => {
+  $('meta-key').value = '';
+  await chrome.runtime.sendMessage({ target: 'worker', type: 'key-clear' });
+  hasKey = false; running = null; keyStatus('Key cleared. Active Meta sessions were ended.'); updateStart();
+};
+$('key-test').onclick = async () => {
+  keyStatus('Testing connection…');
+  const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-test' });
+  keyStatus(r?.error ? r.error : 'Connection works. Meta accepted that key.');
+};
 $('mic').onclick=()=>chrome.runtime.sendMessage({target:'worker',type:'permission'});
 $('start').onclick=async()=>{
-  if (!running && !helperReady) {
-    $('start').disabled = true;
-    await load();
-    return;
-  }
+  if (!running && !hasKey) { keyStatus('Save your Meta Model API key first.'); return; }
   if (!running && !micReady) {
     await chrome.runtime.sendMessage({target:'worker',type:'permission'});
     return;

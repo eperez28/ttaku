@@ -25,3 +25,27 @@ export function pcm24Base64(chunk,sourceRate){
  for(let i=0;i<n;i++){const start=Math.floor(i*ratio),end=Math.min(chunk.length,Math.floor((i+1)*ratio));let value=0;for(let j=start;j<end;j++)value+=chunk[j];value/=Math.max(1,end-start);view.setInt16(i*2,Math.round(Math.max(-1,Math.min(1,value))*(value<0?32768:32767)),true)}
  let text='';for(let i=0;i<bytes.length;i+=8192)text+=String.fromCharCode(...bytes.subarray(i,i+8192));return btoa(text);
 }
+
+export function pcm24Bytes(chunk, sourceRate) {
+  const text = pcm24Base64(chunk, sourceRate);
+  const binary = atob(text); const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+// Meta's completed-audio endpoint accepts mono PCM16 WAV at 16/24 kHz only,
+// so resample the (usually 48 kHz) capture to 24 kHz before upload.
+export function wav24Base64(chunks, sourceRate) {
+  const ratio = sourceRate / 24000;
+  const total = chunks.reduce((s, c) => s + c.length, 0);
+  const n = Math.floor(total / ratio);
+  const flat = new Float32Array(total); let o = 0;
+  for (const c of chunks) { flat.set(c, o); o += c.length; }
+  const samples = new Float32Array(n);
+  for (let i = 0; i < n; i++) { const start = Math.floor(i * ratio), end = Math.min(total, Math.floor((i + 1) * ratio)); let v = 0; for (let j = start; j < end; j++) v += flat[j]; samples[i] = v / Math.max(1, end - start); }
+  return wavBase64([samples], 24000);
+}
+export function base64ToBytes(base64) {
+  const binary = atob(base64); const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}

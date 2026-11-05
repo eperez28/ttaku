@@ -1,5 +1,5 @@
 (()=>{
- const VERSION='0.3.1';if(globalThis.__takuVersion===VERSION)return;globalThis.__takuVersion=VERSION;
+ const VERSION='1.0.0';if(globalThis.__takuVersion===VERSION)return;globalThis.__takuVersion=VERSION;
  let active=false,video=null,host=null,shadow=null,phase='off',phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='';
  const $=id=>shadow?.getElementById(id);
  const send=event=>chrome.runtime.sendMessage({target:'worker',type:'player-event',event}).catch(()=>{});
