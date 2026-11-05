@@ -166,7 +166,21 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       const old = bank.find(x => x.japanese === key); if (old) { old.encounters++; old.lastSeen = Date.now(); } else bank.unshift({ ...m.word, encounters: 1, lastSeen: Date.now(), context: m.context });
       await chrome.storage.local.set({ bank }); return { ok: true };
     }
-    if (m.type === 'passed') { const { progress = { phrases: 0, attempts: 0 } } = await chrome.storage.local.get('progress'); progress.phrases++; await chrome.storage.local.set({ progress }); return; }
+    if (m.type === 'passed') {
+      const { progress = { phrases: 0, attempts: 0 }, spokenBank = [] } = await chrome.storage.local.get(['progress', 'spokenBank']);
+      progress.phrases++;
+      // Build the user's spoken word bank: words from each finished line.
+      const seen = new Set();
+      for (const w of Array.isArray(m.words) ? m.words.slice(0, 12) : []) {
+        if (!w || typeof w.romaji !== 'string' || !w.romaji) continue;
+        const japanese = typeof w.japanese === 'string' ? w.japanese : '';
+        const dedupe = japanese + '|' + w.romaji; if (seen.has(dedupe)) continue; seen.add(dedupe);
+        const old = spokenBank.find(x => x.japanese === japanese && x.romaji === w.romaji);
+        if (old) { old.count = (old.count || 1) + 1; old.lastSeen = Date.now(); if (!old.meaning && typeof w.meaning === 'string') old.meaning = w.meaning; }
+        else spokenBank.push({ japanese, reading: typeof w.reading === 'string' ? w.reading : '', romaji: w.romaji, meaning: typeof w.meaning === 'string' ? w.meaning : '', count: 1, lastSeen: Date.now() });
+      }
+      await chrome.storage.local.set({ progress, spokenBank: spokenBank.slice(0, 500) }); return;
+    }
     const current = await session(); if (!current) return;
     if (m.type === 'audio-event') { if (m.sessionId !== current.id) return; return chrome.tabs.sendMessage(current.tabId, { target: 'player', ...m.event }).catch(() => {}); }
     if (m.type === 'player-event' && sender.tab?.id === current.tabId) return control({ ...m.event, sessionId: current.id });

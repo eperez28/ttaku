@@ -14,7 +14,7 @@ cd ttaku
 Nothing to install or build — there are no runtime dependencies.
 
 1. Open `chrome://extensions` in Chrome, turn on **Developer mode**, click **Load unpacked**, and select the `extension/` folder in this repo.
-2. Click the Ttaku toolbar icon. Paste your **Meta Model API key** into the masked field and click **Save**. (Optional: **Test connection**.) The key is stored in `chrome.storage.local` (extension-only storage that web pages cannot read), so it stays saved after Chrome restarts and extension reloads. **Clear** removes it and ends any active Meta sessions.
+2. Click the Ttaku toolbar icon. Open **Settings** (gear icon), paste your **Meta Model API key** into the masked field, and click **Save**. Change or clear it there anytime. (Optional: **Test connection**.) The key is stored in `chrome.storage.local` (extension-only storage that web pages cannot read), so it stays saved after Chrome restarts and extension reloads. **Clear** removes it and ends any active Meta sessions.
 3. In the popup, click **Allow microphone** and choose **Allow** in the permission window.
 
 ## Judge walkthrough (no streaming subscription)
@@ -41,7 +41,7 @@ The key is never sent to a content script, page, overlay, log, or any origin oth
 
 ## Reused vs. changed
 
-**Reused from the initial Taku build:** toolbar popup layout, fullscreen/player overlay and hollow-romaji fill, practice controls (replay / 0.75× / retry / done / details / skip), word bank, line splitting, word-progress matching, reading matching, and the original test suite (18 tests).
+**Reused from the initial Taku build:** toolbar popup, fullscreen/player overlay and hollow-romaji fill, practice controls (replay / 0.75× / retry / done / details / skip), word bank, line splitting, word-progress matching, reading matching, and the original test suite (18 tests).
 
 **Changed for the Meta submission:** localhost helper, pairing token, `.env.local`, and Node startup removed; OpenAI models/endpoints replaced by the three Meta paths above; API key entered in the popup and kept in session storage; matching moved into the extension; WAV resampled to 24 kHz for Meta; host permissions scoped to Crunchyroll, the local test page, and `api.meta.ai`; brand updated to Ttaku.
 

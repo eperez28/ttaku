@@ -9,33 +9,46 @@
 <body>
 <main>
   <header>
-    <button id="back" class="icon" aria-label="Back to practice" hidden><svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg></button>
+    <button id="back" class="icon" aria-label="Back" hidden><svg viewBox="0 0 24 24"><path d="m14 6-6 6 6 6"/></svg></button>
     <h1 id="heading">Ttaku</h1>
     <div class="tools" id="tools">
-      <button id="open-words" class="icon" aria-label="Saved words" title="Saved words"><svg viewBox="0 0 24 24"><path d="M6 4h12v16l-6-4-6 4z"/></svg></button>
+      <button id="open-words" class="icon" aria-label="Word bank" title="Word bank"><svg viewBox="0 0 24 24"><path d="M6 4h12v16l-6-4-6 4z"/></svg></button>
       <button id="open-settings" class="icon" aria-label="Settings" title="Settings"><svg viewBox="0 0 24 24"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="2.5"/><circle cx="15" cy="17" r="2.5"/></svg></button>
     </div>
   </header>
+
   <section id="practice-view">
-    <div class="keybox">
-      <label for="meta-key">Meta Model API key</label>
-      <input id="meta-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key">
-      <div class="keyrow"><button id="key-save" class="secondary">Save</button><button id="key-test" class="secondary">Test connection</button><button id="key-clear" class="secondary">Clear</button></div>
-      <p id="key-status" role="status">No key saved yet. It is stored only in the extension, never on web pages.</p>
-    </div>
     <h2 id="episode-title">Open a Crunchyroll episode</h2>
-    <p id="helper" role="status" hidden></p>
+    <div id="key-banner" class="banner" hidden>
+      <span>Add your Meta Model API key to start practicing.</span>
+      <button id="go-settings" class="secondary">Add key</button>
+    </div>
     <p id="error" role="alert" hidden></p>
-    <button id="start" class="primary" disabled>Checking connection…</button>
+    <button id="start" class="primary" disabled>Start practice</button>
+    <p id="start-hint" class="hint"></p>
+    <p id="helper" class="diag" role="status" hidden></p>
   </section>
+
   <section id="words-view" hidden>
+    <h3>Words you say a lot</h3>
+    <div id="spoken"></div>
+    <h3>Saved words</h3>
     <div id="words"></div>
-    <button id="export" class="secondary" hidden>Export saved words</button>
+    <button id="export" class="secondary" hidden>Export word bank</button>
   </section>
+
   <section id="settings-view" hidden>
+    <h3>Meta Model API key</h3>
+    <input id="meta-key" type="password" autocomplete="off" spellcheck="false" placeholder="Paste your key" aria-label="Meta Model API key">
+    <div class="keyrow">
+      <button id="key-save" class="secondary">Save</button>
+      <button id="key-test" class="secondary">Test connection</button>
+      <button id="key-clear" class="secondary">Clear</button>
+    </div>
+    <p id="key-status" class="hint" role="status"></p>
     <div class="row"><span>Microphone</span><button class="secondary" id="mic">Allow access</button></div>
     <div class="row"><span>Show Japanese text</span><button id="japanese-toggle" role="switch" aria-checked="false" aria-label="Show Japanese text" class="switch"><span></span></button></div>
-    <div class="row"><span id="progress"></span><span id="usage"></span></div>
+    <div class="row"><span id="progress"></span></div>
   </section>
 </main>
 <script type="module" src="setup.js"></script>

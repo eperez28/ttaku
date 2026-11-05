@@ -89,7 +89,7 @@ async function check(segment) {
     if (ticket !== epoch) return;
     const result = { heard: heardResult.heard || '', ...matchReading(phrase.reading, heardResult.reading || '') };
     emit({ type: 'result', ...result });
-    if (result.passed) { phase = 'passed'; emit({ type: 'word-progress', count: phrase.tokens?.length || 100 }); await chrome.runtime.sendMessage({ target: 'worker', type: 'passed' }); setTimeout(() => { if (ticket === epoch) advance(); }, 650); }
+    if (result.passed) { phase = 'passed'; emit({ type: 'word-progress', count: phrase.tokens?.length || 100 }); await chrome.runtime.sendMessage({ target: 'worker', type: 'passed', words: (phrase.words?.length ? phrase.words : (phrase.tokens || []).map(tok => ({ japanese: tok.japanese || '', reading: tok.reading || '', romaji: tok.romaji || '', meaning: '' }))) }); setTimeout(() => { if (ticket === epoch) advance(); }, 650); }
     else { phase = 'retry'; emit({ type: 'state', phase, message: result.heard ? 'Try that line again.' : 'I couldn’t hear you.' }); setTimeout(() => { if (ticket === epoch) listen('retry'); }, 1300); }
   } catch (error) { if (ticket === epoch) { phase = 'error'; emit({ type: 'state', phase, message: error.message }); } }
 }
