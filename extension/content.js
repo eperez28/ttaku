@@ -1,6 +1,6 @@
 (()=>{
  const VERSION=chrome.runtime.getManifest().version;if(globalThis.__takuVersion===VERSION)return;globalThis.__takuVersion=VERSION;
- let active=false,video=null,host=null,shadow=null,phase='off',mode='rehearse',phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
+ let active=false,video=null,host=null,shadow=null,phase='off',mode='rehearse',cardAnchor='bottom',phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
  const $=id=>shadow?.getElementById(id);
  const send=event=>chrome.runtime.sendMessage({target:'worker',type:'player-event',event}).catch(()=>{});
  const pauseAll=()=>{for(const v of document.querySelectorAll('video')){if(!v.paused)v.pause()}};
@@ -13,7 +13,12 @@
   if(node){captionNode=node;const style=getComputedStyle(node);if(style.fontFamily&&style.fontFamily!==lastFont){host.style.setProperty('--caption-font',style.fontFamily);lastFont=style.fontFamily}if(style.fontWeight)host.style.setProperty('--caption-weight',style.fontWeight);if(style.textShadow&&style.textShadow!=='none')host.style.setProperty('--caption-shadow',style.textShadow)}
   const captionTop=node?.getBoundingClientRect().top;
   const bottom=Number.isFinite(captionTop)?Math.max(28,innerHeight-captionTop+12):Math.max(28,innerHeight-(r.bottom||height)+height*.18);
-  const card=$('card');card.style.left=((r.left||0)+width/2)+'px';card.style.bottom=bottom+'px';card.style.maxWidth=Math.max(200,width*.9)+'px';
+  const card=$('card');card.style.left=((r.left||0)+width/2)+'px';
+  // Practice lines (and karaoke) sit at the top of the video; idle states keep
+  // the subtitle position.
+  if(cardAnchor==='top'){card.style.top=Math.max(10,(r.top||0)+18)+'px';card.style.bottom='auto'}
+  else{card.style.top='auto';card.style.bottom=bottom+'px'}
+  card.style.maxWidth=Math.max(200,width*.9)+'px';
   let size=Math.min(48,Math.max(22,height*.05));$('romaji').style.fontSize=size+'px';
   const measured=$('romaji').scrollWidth;if(measured>width*.87)$('romaji').style.fontSize=Math.max(16,size*(width*.87)/measured)+'px';
  }
@@ -78,13 +83,13 @@
    } else if(next==='empty'){$('card').hidden=true;$('feedback').textContent=''}
    return;
   }
-  phase=next;mount();$('card').hidden=['watching','off'].includes(next);$('card').dataset.phase=next;if(next==='karaoke'){$('card').style.top='16px';$('card').style.bottom='auto'}
+  phase=next;mount();$('card').hidden=['watching','off'].includes(next);$('card').dataset.phase=next;if(next==='karaoke'){cardAnchor='top';position()}
   $('feedback').textContent=['error','empty','retry'].includes(next)?message:'';
   if($('feedback').textContent)$('details').hidden=true;
   $('retry').hidden=!(next==='error'&&phrase);$('retry').disabled=!phrase;
   $('replay').disabled=$('slow').disabled=!phrase||['processing','replay','passed'].includes(next);$('commit').disabled=next!=='listening';$('details-toggle').disabled=!phrase;
   if(next==='processing'){$('details').hidden=true;$('romaji').replaceChildren();const pending=document.createElement('span');pending.className='pending';pending.textContent='…';$('romaji').append(pending);wordEls=[]}
-  if(next==='watching'){phrase=null;$('details').hidden=true;wordEls=[]}
+  if(next==='watching'){phrase=null;cardAnchor='bottom';$('details').hidden=true;wordEls=[]}
  }
  function onPause(){if(active&&phase==='watching')send({type:'video-paused'})}
  function onPlay(){if(active&&phase==='watching')send({type:'video-playing'})}
@@ -125,7 +130,7 @@
    video.play().catch(error=>{if(active&&phase==='watching'&&error.name!=='AbortError')state('error','Press Play to begin.')});reply({ok:true});return;
   }
   if(m.type==='stop'){cleanup();reply({ok:true});return}if(!active)return;
-  if(m.type==='pause'){phase='processing';pauseAll();segmentEnd=Math.max(0,video.currentTime-(m.delaySeconds||0));segmentStart=Math.max(0,segmentEnd-m.duration);phraseURL=location.href;reply({ok:true});return}
+  if(m.type==='pause'){phase='processing';cardAnchor='top';mount();position();pauseAll();segmentEnd=Math.max(0,video.currentTime-(m.delaySeconds||0));segmentStart=Math.max(0,segmentEnd-m.duration);phraseURL=location.href;reply({ok:true});return}
   if(m.type==='state'){state(m.phase,m.message);return}
   if(m.type==='phrase'){
    phrase=m.phrase;mount();showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;
@@ -137,7 +142,7 @@
   if(m.type==='mode-pause'){phase='switching';video.pause();if($('card'))$('card').hidden=true;return}
   if(m.type==='set-mode'){mode=m.mode;phrase=null;wordEls=[];phase=mode==='karaoke'?'karaoke':'watching';mount();$('card').hidden=true;$('details').hidden=true;video.playbackRate=previousRate;video.play().catch(()=>{});reply({ok:true});return}
   if(m.type==='seek-back'){if(video){video.currentTime=Math.max(0,video.currentTime-(m.seconds||10));video.play().catch(()=>{});send({type:'phrase-armed'})}return}
-  if(m.type==='karaoke-phrase'){phrase=m.phrase;mode='karaoke';phase='karaoke';mount();$('card').hidden=false;$('card').style.top='16px';$('card').style.bottom='auto';showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;return}
+  if(m.type==='karaoke-phrase'){phrase=m.phrase;mode='karaoke';phase='karaoke';cardAnchor='top';mount();$('card').hidden=false;showWords();position();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;return}
   if(m.type==='replay'){replayEnd=segmentEnd;video.currentTime=segmentStart;state('replay');video.play().catch(()=>state('error','Couldn’t replay the line.'));return}
  });
  chrome.storage.onChanged.addListener(changes=>{if(changes.showJapanese&&$('japanese'))$('japanese').hidden=!changes.showJapanese.newValue});
