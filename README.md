@@ -1,54 +1,51 @@
-# Ttaku — speak along with Japanese video
+# Ttaku - Speak fluent Japanese by watching anime
 
-Chrome extension for the Meta Global AI Developer Hackathon. Hear a short Japanese line from a video, repeat it into the microphone, watch the matching romaji fill as you speak, and playback resumes once the attempt passes.
+Ttaku turns the show you're already watching into a speaking partner.
 
-Ttaku keeps the original Taku toolbar popup, fullscreen overlay, practice controls, and saved-word bank. What changed for the Meta submission is underneath: no localhost helper, no pairing token, no `.env.local`, and no Node step to run it. Your own Meta Model API key goes straight from the popup to Meta.
+A character says a line. The show pauses. You see how to say it in English letters (romaji), big and clear at the top of the video. You say it out loud — the words turn yellow as Ttaku hears them — and when you've got it, the show starts playing again.
 
-## Load it from a fresh clone
+No flashcards. No lessons. Just your show, and you, talking back to it.
 
-```sh
-git clone <this-repo> ttaku
-cd ttaku
-```
+## What it feels like
 
-Nothing to install or build — there are no runtime dependencies.
+**Rehearse** — Like practicing with a patient friend. The show pauses after every line, shows you the words, and waits until you say them before it plays again. Grunts, laughs, and background noise don't stop the show — only real lines do. Too long a speech? You practice it piece by piece in the same pause. If you'd rather keep watching, just press Play and Ttaku lets the line go.
 
-1. Open `chrome://extensions` in Chrome, turn on **Developer mode**, click **Load unpacked**, and select the `extension/` folder in this repo.
-2. Click the Ttaku toolbar icon. Open **Settings** (gear icon), paste your **Meta Model API key** into the masked field, and click **Save**. Change or clear it there anytime. (Optional: **Test connection**.) The key is stored in `chrome.storage.local` (extension-only storage that web pages cannot read), so it stays saved after Chrome restarts and extension reloads. **Clear** removes it and ends any active Meta sessions.
-3. In the popup, click **Allow microphone** and choose **Allow** in the permission window.
+**Karaoke** — For talking along with the characters. The words appear at the top while the scene plays and fill in as you say them — the show never stops.
 
-## Judge walkthrough (no streaming subscription)
+Everything you say is collected for you in a **word bank**: the words you find yourself saying all the time, plus any you tap to save while practicing.
 
-This repo ships an original, redistributable test clip (`test/demo-line.mp4`, a synthetic Kyoko-voice recording of 「大丈夫ですか」 made for this repo) and a test page.
+## Getting started
 
-```sh
-cd test && python3 -m http.server 8123   # static files only; Ttaku itself needs no server
-```
+You don't need to install anything or run any code. You just need Chrome and a free Meta Model API key (Ttaku listens with Meta's AI, and every user brings their own key).
 
-1. Open `http://127.0.0.1:8123/demo.html`, save your Meta key in the Ttaku popup, allow the microphone, and click **Start practice**.
-2. Press Play. Ttaku pauses after the line and shows the romaji hollow: *daijoubu desu ka*.
-3. Say only 「大丈夫」 — only *daijoubu* fills. Say the whole line — the rest fills, the final completed-audio check runs, and playback resumes on a pass.
+1. Download this project (green **Code** button → **Download ZIP**) and unzip it.
+2. In Chrome, go to `chrome://extensions`, turn on **Developer mode** (top right), click **Load unpacked**, and choose the `extension` folder.
+3. Click the Ttaku icon in your toolbar. Hit the gear (⚙ Settings), paste your **Meta Model API key**, and click **Save**. Hit **Test connection** if you want to check it works.
+4. Still in Settings, click **Allow access** for the microphone and say yes when Chrome asks.
+5. Open an anime episode on Crunchyroll with Japanese audio, click the Ttaku icon, flip the **Practice** switch on, and pick **Rehearse** or **Karaoke**.
 
-For real anime, open a Crunchyroll episode with Japanese audio instead and click **Start practice** the same way.
+That's it. Your key stays saved in the extension on your device — you only enter it once. To change or remove it later, it's in Settings.
 
-## How it works
+**Want to try it without a streaming subscription?** The `test` folder in this project has a short practice clip and page. Serve that folder with any static file server (for example `python3 -m http.server` inside `test`), open the page, and practice on it the same way.
 
-- **Source clips & final check** — `muse-voice-transcribe-1.0`, `POST https://api.meta.ai/v1/asr/transcribe`, multipart `request` (JSON, `languageBias: ["Japanese"]`) + `audio` (mono PCM16 WAV at 24 kHz), bearer auth from the service worker.
-- **Live fill** — `muse-voice-transcribe-1.0` at `wss://api.meta.ai/v1/asr/realtime`, opened from the offscreen document: auth in the first JSON handshake (`authorization.accessToken`), wait for the session acknowledgement, then raw 24 kHz mono PCM16 binary frames, `{"type":"endStream"}` to finalize. `PUSH_TO_TALK` with cumulative partials: each partial replaces the last and feeds the existing word-matching, so romaji fills word by word. If streaming fails, the completed-audio final check still decides the attempt.
-- **Japanese text** — `muse-spark-1.3`, `POST https://api.meta.ai/v1/responses` with `text.format` JSON Schema (the original phrase and learner-reading schemas): short single lines, hiragana readings, spaced romaji, token alignment, English meanings, vocabulary. Output is validated before use. The learner-reading conversion receives only the recognized transcript; the expected answer is never sent to ASR or to the reading conversion.
+## Good to know
 
-The key is never sent to a content script, page, overlay, log, or any origin other than `api.meta.ai`.
+- **Your key, your business.** Your API key is only ever sent to Meta from inside the extension. It never touches the web page, the show, or anyone else. Your word bank and progress live in your browser, not on a server.
+- **It's judging your reading, not your accent.** Ttaku checks that the words you said match the line. It doesn't grade pronunciation or pitch — yet.
+- **Sometimes it mishears.** Crowded scenes, songs, shouting over explosions — if a line comes out wrong, Replay it, Skip it, or just press Play and keep watching.
+- Lines only pause when they're worth practicing. One-word shouts and laughs play straight through.
 
-## Reused vs. changed
+## Under the hood (for the curious and the judges)
 
-**Reused from the initial Taku build:** toolbar popup, fullscreen/player overlay and hollow-romaji fill, practice controls (replay / 0.75× / retry / done / details / skip), word bank, line splitting, word-progress matching, reading matching, and the original test suite (18 tests).
+- `muse-voice-transcribe-1.0` (Meta Model API) hears both sides: completed-audio transcription for the show's lines and for checking your attempts, and a realtime WebSocket stream that fills the words in yellow as you speak.
+- `muse-spark-1.3` turns what was heard into practice lines — hiragana readings, romaji, word-by-word alignment, plus translations and vocabulary that load quietly in the background.
+- The answer you're supposed to say is never sent to the speech recognizer, so it can't cheat. Matching is done locally in the extension.
+- Built for the Meta Global AI Developer Hackathon. The popup, overlay, and practice flow evolve from an earlier personal build called Taku; the localhost helper and OpenAI plumbing were replaced with direct Meta Model API calls, a bring-your-own-key popup, and the current mode system.
 
-**Changed for the Meta submission:** localhost helper, pairing token, `.env.local`, and Node startup removed; OpenAI models/endpoints replaced by the three Meta paths above; API key entered in the popup and kept in session storage; matching moved into the extension; WAV resampled to 24 kHz for Meta; host permissions scoped to Crunchyroll, the local test page, and `api.meta.ai`; brand updated to Ttaku.
-
-## Tests
+## Trying the code
 
 ```sh
-npm test   # Node 18+, no dependencies to install
+npm test   # Node 18+, nothing to install
 ```
 
-See `VERIFICATION.md` for what was verified, and against what.
+See `VERIFICATION.md` for what has and hasn't been tested, and `SECURITY_SCAN.md` for the pre-publication secret scan.
