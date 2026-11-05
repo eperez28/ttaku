@@ -2,7 +2,7 @@
 // Meta realtime stream. HTTP Meta calls are delegated to the service worker;
 // the expected line never leaves this document for ASR or reading conversion.
 import { Segmenter, wav24Base64, pcm24Bytes } from './audio-utils.js';
-import { recognizedPrefix, recognizedMatches, compactLines, isPauseWorthy, punctuateLine } from './word-progress.js';
+import { recognizedPrefix, recognizedMatches, compactLines, isPauseWorthy, punctuateLine, mergeRepeats, repeatKey } from './word-progress.js';
 import { matchReading } from './matching.js';
 import { META_WS, buildHandshake, isHandshakeAck, cumulativeTranscript } from './meta-protocol.js';
 
@@ -170,6 +170,7 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
     lines = built?.error && streamed?.shown ? streamed.lines : built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(punctuateLine);
+    if (!streamed?.shown) lines = mergeRepeats(lines);
     if (streamed?.shown && phrase) {
       // Lines already on screen stay; adopt the final list as the queue,
       // keeping the exact object the user is looking at.
@@ -242,9 +243,18 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
   if (m.target === 'display' && sender.id === chrome.runtime.id) {
     if (m.type === 'display-line' && activeDisplay && m.streamId === activeDisplay.id && m.line) {
       const line = punctuateLine(m.line);
-      activeDisplay.lines.push(line);
-      lines = activeDisplay.lines;
-      if (!activeDisplay.shown) { activeDisplay.shown = true; lineIndex = 0; showLine(); }
+      const last = activeDisplay.lines[activeDisplay.lines.length - 1];
+      if (last && repeatKey(last) && repeatKey(last) === repeatKey(line)) {
+        last.japanese = (last.japanese || '') + (line.japanese || '');
+        last.reading = (last.reading || '') + (line.reading || '');
+        last.romaji = (last.romaji || '') + ' ' + (line.romaji || '');
+        last.tokens = [...(last.tokens || []), ...(line.tokens || [])];
+        if (activeDisplay.shown && phrase === last) emit({ type: 'phrase-update', phrase: last });
+      } else {
+        activeDisplay.lines.push(line);
+        lines = activeDisplay.lines;
+        if (!activeDisplay.shown) { activeDisplay.shown = true; lineIndex = 0; showLine(); }
+      }
     }
     return;
   }

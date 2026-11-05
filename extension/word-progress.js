@@ -81,3 +81,20 @@ export function punctuateLine(line){
  if(tokens?.length){tokens=tokens.map((tok,i)=>i===tokens.length-1?{...tok,romaji:(tok.romaji||'').replace(/[.!?]+$/,'')+mark}:tok)}
  return {...line,romaji,tokens};
 }
+
+export function repeatKey(line){
+ return (line?.romaji||'').toLowerCase().replace(/[^a-z0-9]/g,'');
+}
+export function mergeRepeats(lines){
+ const out=[];
+ for(const line of lines||[]){
+  const key=repeatKey(line);const prev=out[out.length-1];
+  if(prev&&key&&repeatKey(prev)===key){
+   prev.japanese=(prev.japanese||'')+(line.japanese||'');
+   prev.reading=(prev.reading||'')+(line.reading||'');
+   prev.romaji=(prev.romaji||'')+' '+(line.romaji||'');
+   prev.tokens=[...(prev.tokens||[]),...(line.tokens||[])];
+  } else out.push({...line});
+ }
+ return out;
+}

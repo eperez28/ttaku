@@ -153,6 +153,7 @@
    renderWords();return;
   }
   if(m.type==='phrase-details'){if(phrase){phrase.meaning=m.meaning;phrase.words=m.words||[];$('meaning').textContent=phrase.meaning;$('details').hidden=false;renderWords()}return}
+  if(m.type==='phrase-update'){if(phrase){const done=wordEls.filter(el=>el.classList.contains('done')).length;phrase=m.phrase;showWords();progress(done);if(phrase.meaning)$('meaning').textContent=phrase.meaning}return}
   if(m.type==='phrase-tokens'){if(phrase&&m.tokens?.length){const done=wordEls.filter(el=>el.classList.contains('done')).length;phrase.tokens=m.tokens;showWords();progress(done)}return}
   if(m.type==='word-progress'){progress(m.count,m.mask,m.part);return}
   if(m.type==='result'){if(m.passed){progress(wordEls.length);state('passed')}return}

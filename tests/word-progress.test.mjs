@@ -1,4 +1,4 @@
-import {test} from 'node:test';import assert from 'node:assert/strict';import {recognizedPrefix,compactLines,isPauseWorthy,romajiToKana,displayTokens,recognizedMatches,punctuateLine} from '../extension/word-progress.js';
+import {test} from 'node:test';import assert from 'node:assert/strict';import {recognizedPrefix,compactLines,isPauseWorthy,romajiToKana,displayTokens,recognizedMatches,punctuateLine,mergeRepeats} from '../extension/word-progress.js';
 const tokens=[{japanese:'大丈夫',reading:'だいじょうぶ',romaji:'daijoubu'},{japanese:'です',reading:'です',romaji:'desu'},{japanese:'か',reading:'か',romaji:'ka?'}];
 test('partial recognition fills only complete words in order',()=>{assert.equal(recognizedPrefix(tokens,'大'),0);assert.equal(recognizedPrefix(tokens,'大丈夫'),1);assert.equal(recognizedPrefix(tokens,'大丈夫です'),2);assert.equal(recognizedPrefix(tokens,'大丈夫ですか？'),3)});
 test('kana transcription also matches the target reading',()=>assert.equal(recognizedPrefix(tokens,'ダイジョウブです'),2));
@@ -13,3 +13,5 @@ test('fill lights each word you actually said, even after a misheard word',()=>{
 test('a half-spoken next word reports a partial fill',()=>{const {mask,partial}=recognizedMatches(tokens,'大丈夫で');assert.deepEqual(mask,[true,false,false]);assert.equal(partial.index,1);assert.ok(partial.ratio>0&&partial.ratio<1)});
 
 test('lines end with the punctuation the sentence needs',()=>{assert.equal(punctuateLine({japanese:'行くぞ。',romaji:'iku zo',tokens:[{romaji:'iku'},{romaji:'zo'}]}).romaji,'iku zo.');assert.equal(punctuateLine({japanese:'行けるか',romaji:'ikeru ka'}).romaji,'ikeru ka?');assert.equal(punctuateLine({japanese:'行くぞ！',romaji:'iku zo!'}).romaji,'iku zo!')});
+
+test('repeated lines merge into one wrapped block',()=>{const line={japanese:'こういうもんだ。',reading:'こういうもんだ',romaji:'kou iu mon da.',tokens:[{romaji:'kou'},{romaji:'iu'}]};const merged=mergeRepeats([line,line,line]);assert.equal(merged.length,1);assert.equal(merged[0].romaji,'kou iu mon da. kou iu mon da. kou iu mon da.');assert.equal(merged[0].tokens.length,6);const mixed=mergeRepeats([line,{...line,romaji:'iku zo.',japanese:'行くぞ。'}]);assert.equal(mixed.length,2)});
