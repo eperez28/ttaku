@@ -42,3 +42,8 @@ h3:first-child{margin-top:0}
 .word .count{color:#8a8a8e;font-size:11px}
 .word a{color:#49494d;text-decoration:none}
 #export{margin-top:8px}
+
+.modes{display:flex;background:#f0f0f1;border-radius:9px;padding:2px;margin-top:10px}
+.modes button{flex:1;border:0;background:none;padding:6px 0;font-size:12px;font-weight:550;color:#626267;border-radius:7px}
+.modes button[aria-pressed=true]{background:#fff;color:#1c1c1e;box-shadow:0 1px 3px #0002}
+.modes button:disabled{opacity:.5}
