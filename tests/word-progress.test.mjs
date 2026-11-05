@@ -23,7 +23,7 @@ test('live coverage counts matched sounds across the line',()=>{const toks=[{rea
 
 test('the practice line is the real sentence, not the shout before it',()=>{const lines=[{japanese:'おい、',reading:'おい',romaji:'Oi,'},{japanese:'俺の船を見ろ',reading:'おれのふねをみろ',romaji:'ore no fune wo miro'}];assert.equal(pickPracticeLine(lines).romaji,'ore no fune wo miro');assert.equal(pickPracticeLine([lines[0]]),null);assert.equal(isSubstantialLine(lines[1]),true)});
 
-test('everything heard displays as one wrapped block, not pieces',()=>{const lines=[{japanese:'おい、',reading:'おい',romaji:'Oi,',tokens:[{romaji:'Oi,'}]},{japanese:'俺の船を見ろ',reading:'おれのふねをみろ',romaji:'ore no fune wo miro',tokens:[{romaji:'ore'},{romaji:'miro'}]}];const all=combineLines(lines);assert.equal(all.romaji,'Oi, ore miro'); // built from the tokens, the source of truthassert.equal(all.tokens.length,3);assert.equal(combineLines([]),null)});
+test('everything heard displays as one wrapped block, not pieces',()=>{const lines=[{japanese:'おい、',reading:'おい',romaji:'Oi,',tokens:[{romaji:'Oi,'}]},{japanese:'俺の船を見ろ',reading:'おれのふねをみろ',romaji:'ore no fune wo miro',tokens:[{romaji:'ore'},{romaji:'miro'}]}];const all=combineLines(lines);assert.equal(all.romaji,'Oi, ore miro');assert.equal(all.tokens.length,3);assert.equal(combineLines([]),null)});
 
 test('compound verbs split into stem and ending',()=>{const out=expandContractions({japanese:'引っ掻き回した',reading:'ひっかきまわした',romaji:'hikkakimawashita',tokens:[{japanese:'引っ掻き回した',reading:'ひっかきまわした',romaji:'hikkakimawashita'}]});assert.deepEqual(out.tokens.map(t=>t.romaji),['hikkaki','mawashita']);assert.equal(out.tokens[0].reading,'ひっかき');assert.equal(out.romaji,'hikkaki mawashita')});
 
