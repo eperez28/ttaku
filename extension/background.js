@@ -3,7 +3,7 @@
 // pages cannot read it), is read here on demand, and is never sent to
 // content scripts, pages, or logs. It persists across Chrome restarts and
 // extension reloads until the user clears it in the popup.
-import { META_BASE, TEXT_MODEL, ASR_MODEL, PHRASE_SCHEMA, READING_SCHEMA, PHRASE_INSTRUCTIONS, READING_INSTRUCTIONS, responsesBody, extractResponsesText, extractTranscript, transcribeRequest, validatePhraseOutput, validateReadingOutput, mapMetaError } from './meta-protocol.js';
+import { META_BASE, TEXT_MODEL, ASR_MODEL, PHRASE_SCHEMA, READING_SCHEMA, PHRASE_INSTRUCTIONS, READING_INSTRUCTIONS, responsesBody, extractResponsesText, responseProblem, responseShape, parseEventStream, extractTranscript, transcribeRequest, validatePhraseOutput, validateReadingOutput, mapMetaError } from './meta-protocol.js';
 import { base64ToBytes } from './audio-utils.js';
 
 let starting = false;
@@ -52,7 +52,9 @@ async function metaFetch(path, init) {
     chrome.storage.local.set({ lastError: message }).catch(() => {});
     throw Error(message);
   }
-  let data = null; try { data = await response.json(); } catch {}
+  let data = null;
+  const raw = await response.text().catch(() => '');
+  try { data = JSON.parse(raw); } catch { data = parseEventStream(raw); }
   if (!response.ok) { const message = mapMetaError(response.status); chrome.storage.local.set({ lastError: message }).catch(() => {}); throw Error(message); }
   chrome.storage.local.set({ lastError: '' }).catch(() => {});
   return data;
@@ -71,8 +73,11 @@ async function transcribe(audioBase64) {
 async function structured(instructions, input, schema, name) {
   const data = await metaFetch('/responses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(responsesBody(instructions, input, schema, name)) });
   const text = extractResponsesText(data);
-  if (!text) throw Error('Meta did not return a usable answer. Please retry.');
-  try { return JSON.parse(text); } catch { throw Error('Meta returned an unusable answer. Please retry.'); }
+  if (text) { try { return JSON.parse(text); } catch {} }
+  const problem = responseProblem(data);
+  chrome.storage.local.set({ metaDiag: responseShape(data) }).catch(() => {});
+  if (problem) throw Error(problem);
+  throw Error(text ? 'Meta returned an unusable answer. Please retry.' : 'Meta finished but sent no answer. Please retry.');
 }
 const phraseCache = new Map();
 async function phrase(audioBase64) {

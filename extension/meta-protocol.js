@@ -54,10 +54,62 @@ export function transcribeRequest() {
   return { mode: 'PUSH_TO_TALK', model: ASR_MODEL, audioEncoding: 'WAV', languageBias: ['Japanese'] };
 }
 export function responsesBody(instructions, input, schema, name) {
-  return { model: TEXT_MODEL, instructions, input: JSON.stringify(input), store: false, text: { format: { type: 'json_schema', name, strict: true, schema } }, max_output_tokens: 2000 };
+  // reasoning:'none' + a larger budget: Muse Spark can otherwise spend the
+  // whole token limit on hidden reasoning and return an empty, incomplete
+  // response for these mechanical conversion jobs.
+  return { model: TEXT_MODEL, instructions, input: JSON.stringify(input), store: false, stream: false, reasoning: { effort: 'none' }, text: { format: { type: 'json_schema', name, strict: true, schema } }, max_output_tokens: 4000 };
 }
 export function extractResponsesText(data) {
-  return (data?.output || []).flatMap(x => x.content || []).filter(x => x.type === 'output_text').map(x => x.text).join('');
+  if (!data || typeof data !== 'object') return '';
+  if (typeof data.output_text === 'string' && data.output_text) return data.output_text;
+  const parts = [];
+  for (const item of data.output || []) {
+    if (typeof item?.content === 'string') { parts.push(item.content); continue; }
+    for (const part of item?.content || []) {
+      if ((part?.type === 'output_text' || part?.type === 'text') && typeof part.text === 'string') parts.push(part.text);
+    }
+  }
+  return parts.join('');
+}
+// A Responses call can finish as failed/incomplete inside an HTTP 200.
+// Returns a short, user-safe explanation (never response content), or null.
+export function responseProblem(data) {
+  if (!data || typeof data !== 'object') return 'Meta sent back something Ttaku could not read.';
+  if (data.status === 'failed') {
+    const code = data.error?.code || '';
+    if (code === 'rate_limit_exceeded') return 'Meta rate limit reached. Wait a moment, then try again.';
+    if (code === 'invalid_prompt') return 'Meta could not use that request. Please retry.';
+    return 'Meta could not finish that one. Please retry.';
+  }
+  if (data.status === 'incomplete') {
+    const reason = data.incomplete_details?.reason || '';
+    if (reason === 'max_output_tokens') return 'Meta stopped before finishing. Please retry.';
+    if (reason === 'content_filter') return 'Meta would not process that line. Try the next one.';
+    return 'Meta stopped before finishing. Please retry.';
+  }
+  if (['cancelled', 'in_progress', 'queued'].includes(data.status)) return 'Meta did not finish that one. Please retry.';
+  return null;
+}
+export function responseShape(data) {
+  if (!data || typeof data !== 'object') return 'no-json';
+  const items = (data.output || []).map(item => item?.type + '(' + (Array.isArray(item?.content) ? item.content.map(c => c?.type).join(',') : typeof item?.content) + ')').join(' ');
+  return 'status=' + (data.status || '?') + ' output=' + (items || 'none');
+}
+// If Meta answers with an event stream instead of one JSON body, rebuild
+// the final response (or its text) from the events.
+export function parseEventStream(text) {
+  let response = null, deltaText = '';
+  for (const line of String(text || '').split(/\r?\n/)) {
+    if (!line.startsWith('data:')) continue;
+    const payload = line.slice(5).trim();
+    if (!payload || payload === '[DONE]') continue;
+    let event; try { event = JSON.parse(payload); } catch { continue; }
+    if (event?.response) response = event.response;
+    if (event?.type === 'response.output_text.delta' && typeof event.delta === 'string') deltaText += event.delta;
+    if (event?.type === 'response.output_text.done' && typeof event.text === 'string') deltaText = event.text;
+  }
+  if (response && !extractResponsesText(response) && deltaText) return { ...response, output_text: deltaText };
+  return response;
 }
 export function mapMetaError(status) {
   if (status === 401) return 'Meta rejected that API key. Check the key and try again.';
