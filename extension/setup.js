@@ -39,13 +39,14 @@ function wordRow(word, count) {
 const emptyNote = text => { const p = document.createElement('div'); p.className = 'empty'; p.textContent = text; return p; };
 
 async function load() {
-  const stored = await chrome.storage.local.get(['micReady', 'bank', 'spokenBank', 'progress', 'lastError', 'showJapanese']);
+  const stored = await chrome.storage.local.get(['micReady', 'bank', 'spokenBank', 'progress', 'lastError', 'showJapanese', 'delayHelp']);
   micReady = !!stored.micReady;
   const bank = stored.bank || [];
   const spoken = [...(stored.spokenBank || [])].sort((a, b) => (b.count || 0) - (a.count || 0) || (b.lastSeen || 0) - (a.lastSeen || 0));
   const progress = stored.progress || { phrases: 0 };
   $('mic').textContent = micReady ? 'Allowed' : 'Allow access'; $('mic').classList.toggle('enabled', micReady);
   $('japanese-toggle').setAttribute('aria-checked', String(!!stored.showJapanese));
+  $('delay-help-toggle').setAttribute('aria-checked', String(stored.delayHelp !== false));
   showError(stored.lastError || '');
   if (stored.lastError) chrome.storage.local.set({ lastError: '' }).catch(() => {});
 
@@ -103,6 +104,7 @@ $('key-test').onclick = async () => {
   keyStatus(r?.error ? friendlyError(r.error) : 'Works.');
 };
 $('japanese-toggle').onclick = async () => { const v = $('japanese-toggle').getAttribute('aria-checked') !== 'true'; await chrome.storage.local.set({ showJapanese: v }); $('japanese-toggle').setAttribute('aria-checked', String(v)); };
+$('delay-help-toggle').onclick = async () => { const v = $('delay-help-toggle').getAttribute('aria-checked') !== 'true'; await chrome.storage.local.set({ delayHelp: v }); $('delay-help-toggle').setAttribute('aria-checked', String(v)); };
 function showView(view) {
   for (const name of ['practice', 'words', 'settings']) $(name + '-view').hidden = name !== view;
   $('heading').textContent = { practice: 'Ttaku', words: 'Word bank', settings: 'Settings' }[view];

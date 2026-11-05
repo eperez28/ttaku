@@ -1,7 +1,7 @@
 (()=>{
  const VERSION=chrome.runtime.getManifest().version;if(globalThis.__takuVersion===VERSION)return;globalThis.__takuVersion=VERSION;
  const GEN=(globalThis.__takuGen=(globalThis.__takuGen||0)+1);
- let active=false,video=null,host=null,shadow=null,phase='off',cardAnchor='bottom',phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
+ let active=false,video=null,host=null,shadow=null,phase='off',cardAnchor='bottom',delayHelp=true,helpTimer=null,helpRevealed=false,phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
  const $=id=>shadow?.getElementById(id);
  const send=event=>chrome.runtime.sendMessage({target:'worker',type:'player-event',event}).catch(()=>{});
  const pauseAll=()=>{for(const v of document.querySelectorAll('video')){if(!v.paused)v.pause()}};
@@ -45,6 +45,7 @@
    .controls,.details,.status{position:absolute;left:50%;transform:translateX(-50%);width:max-content;max-width:min(82vw,420px)}
    .controls{bottom:100%;display:flex;align-items:center;gap:2px;background:#141414e8;backdrop-filter:blur(12px);border-radius:8px;padding:3px;opacity:0;pointer-events:none;transition:opacity .15s}
    .caption:hover .controls,.caption:focus-within .controls,.caption[data-phase=error] .controls,.caption[data-phase=empty] .controls,.caption[data-phase=listening] .controls,.caption[data-phase=retry] .controls,.caption[data-phase=checking] .controls{opacity:1;pointer-events:auto}
+   .caption[data-help-wait=true] .controls{opacity:0!important;pointer-events:none!important}
    .controls button,.end button{display:grid;place-items:center;min-width:34px;height:32px;background:none;border:0;border-radius:5px}
    .controls button:hover,.words button:hover{background:#ffffff20}
    .controls button.text{width:auto;padding:0 10px;font-size:12px;font-weight:600;white-space:nowrap}
@@ -63,7 +64,7 @@
    $('stop').onclick=()=>chrome.runtime.sendMessage({target:'worker',type:'stop'});
    $('skip').onclick=()=>send({type:'skip'});$('retry').onclick=()=>send({type:'retry'});$('phonetics').onclick=()=>{const el=$('help');if(el.hidden)showHelp();else el.hidden=true};
    $('replay').onclick=()=>{previousRate=video.playbackRate;video.playbackRate=1;send({type:'replay'})};
-   chrome.storage.local.get('showJapanese').then(({showJapanese})=>{if($('japanese'))$('japanese').hidden=!showJapanese}).catch(()=>{});
+   chrome.storage.local.get(['showJapanese','delayHelp']).then(stored=>{delayHelp=stored.delayHelp!==false;if($('japanese'))$('japanese').hidden=!stored.showJapanese}).catch(()=>{});
    for(const event of ['keydown','pointerdown','click'])host.addEventListener(event,e=>e.stopPropagation());
   }
   const fs=document.fullscreenElement,parent=fs&&fs.tagName!=='VIDEO'?fs:document.documentElement;if(host.parentNode!==parent)parent.append(host);position();
@@ -76,6 +77,18 @@
    if(j<s.length){out.push(s.slice(i,j+1));i=j+1}else{out.push(s.slice(i));break}
   }
   return out.join('-');
+ }
+ function revealHelp(){
+  clearTimeout(helpTimer);helpRevealed=true;
+  const card=$('card');if(card)card.dataset.helpWait='false';
+  if(phrase)$('details').hidden=false;
+ }
+ function beginHelpDelay(){
+  clearTimeout(helpTimer);helpRevealed=!delayHelp;
+  const card=$('card');if(card)card.dataset.helpWait=String(delayHelp);
+  if($('details'))$('details').hidden=true;
+  if(!delayHelp){revealHelp();return}
+  helpTimer=setTimeout(revealHelp,4000);
  }
  function showHelp(){
   if(!phrase)return;
@@ -119,7 +132,7 @@
   $('retry').hidden=!(next==='error'&&phrase);$('retry').disabled=!phrase;
   $('replay').disabled=!phrase||['processing','replay','passed'].includes(next);$('phonetics').disabled=!phrase;$('details-toggle').disabled=!phrase;
   if(next==='processing'){$('details').hidden=true;$('card').hidden=true;wordEls=[]}
-  if(next==='watching'){phrase=null;cardAnchor='bottom';$('details').hidden=true;wordEls=[]}
+  if(next==='watching'){phrase=null;cardAnchor='bottom';clearTimeout(helpTimer);helpRevealed=false;$('details').hidden=true;wordEls=[]}
  }
  function onPause(){if(active&&phase==='watching')send({type:'video-paused'})}
  function onPlay(){
@@ -164,10 +177,10 @@
   if(m.type==='pause'){phase='processing';cardAnchor='top';mount();position();pauseAll();segmentEnd=Math.max(0,video.currentTime-(m.delaySeconds||0));segmentStart=Math.max(0,segmentEnd-m.duration);phraseURL=location.href;reply({ok:true});return}
   if(m.type==='state'){state(m.phase,m.message);return}
   if(m.type==='phrase'){
-   phrase=m.phrase;mount();$('help').hidden=true;showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=false;
-   renderWords();return;
+   phrase=m.phrase;mount();$('help').hidden=true;showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;
+   renderWords();beginHelpDelay();return;
   }
-  if(m.type==='phrase-details'){if(phrase){phrase.meaning=m.meaning;phrase.words=m.words||[];$('meaning').textContent=phrase.meaning;$('details').hidden=false;renderWords()}return}
+  if(m.type==='phrase-details'){if(phrase){phrase.meaning=m.meaning;phrase.words=m.words||[];$('meaning').textContent=phrase.meaning;if(helpRevealed||!delayHelp)$('details').hidden=false;renderWords()}return}
   if(m.type==='struggle-help'){showHelp();return}
   if(m.type==='phrase-update'){if(phrase){const done=wordEls.filter(el=>el.classList.contains('done')).length;phrase=m.phrase;showWords();progress(done);if(phrase.meaning)$('meaning').textContent=phrase.meaning}return}
   if(m.type==='phrase-tokens'){if(phrase&&m.tokens?.length){const done=wordEls.filter(el=>el.classList.contains('done')).length;phrase.tokens=m.tokens;showWords();progress(done)}return}
@@ -180,7 +193,10 @@
 
   if(m.type==='replay'){replayEnd=segmentEnd;video.currentTime=segmentStart;state('replay');video.play().catch(()=>state('error','Couldn’t replay the line.'));return}
  });
- chrome.storage.onChanged.addListener(changes=>{if(changes.showJapanese&&$('japanese'))$('japanese').hidden=!changes.showJapanese.newValue});
+ chrome.storage.onChanged.addListener(changes=>{
+  if(changes.showJapanese&&$('japanese'))$('japanese').hidden=!changes.showJapanese.newValue;
+  if(changes.delayHelp){delayHelp=changes.delayHelp.newValue!==false;if(!delayHelp)revealHelp();else if(phrase)beginHelpDelay()}
+ });
  document.addEventListener('fullscreenchange',()=>{if(active)mount()});window.addEventListener('resize',()=>{if(active)position()});
  window.addEventListener('pagehide',()=>{if(active)chrome.runtime.sendMessage({target:'worker',type:'stop'}).catch(()=>{})});
 })();
