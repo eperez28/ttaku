@@ -16,7 +16,11 @@ function saveDiag(outcome) {
   diag.at = Date.now();
   if (diag.at - diagSavedAt < 800) return;
   diagSavedAt = diag.at;
-  chrome.storage.local.set({ diag: { ...diag } }).catch(() => {});
+  // Offscreen documents have no chrome.storage API: the service worker writes it.
+  chrome.runtime.sendMessage({ target: 'worker', type: 'diag', diag: { ...diag } }).catch(() => {});
+}
+async function getApiKey() {
+  try { const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-get' }); return r?.key || null; } catch { return null; }
 }
 const meta = message => chrome.runtime.sendMessage({ target: 'meta', ...message });
 
@@ -34,8 +38,7 @@ function closeLive(finalize = false) {
 }
 async function openLive() {
   closeLive(); liveFailed = false;
-  const stored = await chrome.storage.local.get('metaKey');
-  const metaKey = stored.metaKey || (await chrome.storage.session.get('metaKey')).metaKey;
+  const metaKey = await getApiKey();
   if (!metaKey) { liveFailed = true; return; } // Completed-audio check still works.
   let ws;
   try { ws = new WebSocket(META_WS); } catch { liveFailed = true; return; }

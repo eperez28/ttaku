@@ -149,6 +149,11 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       return { ok: true, hasKey: true };
     }
     if (m.type === 'key-clear') { endMetaSessions(); await chrome.storage.local.remove('metaKey'); await chrome.storage.session.remove('metaKey'); return { ok: true, hasKey: false }; }
+    if (m.type === 'key-get') return { key: await getKey() };
+    if (m.type === 'diag') {
+      if (m.diag) await chrome.storage.local.set({ diag: { peak: Number(m.diag.peak) || 0, clips: Number(m.diag.clips) || 0, outcome: String(m.diag.outcome || '').slice(0, 200), at: Number(m.diag.at) || Date.now() } });
+      return { ok: true };
+    }
     if (m.type === 'key-test') {
       await structured('Return the hiragana reading of the supplied Japanese word, as data.', { transcript: 'ありがとう' }, READING_SCHEMA, 'connection_test');
       return { ok: true, models: [ASR_MODEL, TEXT_MODEL] };
