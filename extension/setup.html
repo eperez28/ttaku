@@ -20,8 +20,10 @@
   <section id="practice-view">
     <p id="error" role="alert" hidden></p>
     <button id="start" class="primary" disabled>Start practice</button>
-    <div id="modes" class="modes" role="group" aria-label="Practice mode">
-      <button data-mode="rehearse">Rehearse</button><button data-mode="phrase">Phrase</button><button data-mode="karaoke">Karaoke</button>
+    <div id="modes" class="modes" role="radiogroup" aria-label="Practice mode">
+      <button class="mode" data-mode="rehearse" role="radio" aria-checked="true"><span class="radio"></span><span class="mode-text"><span class="mode-name">Rehearse</span><span class="mode-desc">Pause after every line</span></span></button>
+      <button class="mode" data-mode="phrase" role="radio" aria-checked="false"><span class="radio"></span><span class="mode-text"><span class="mode-name">Phrase</span><span class="mode-desc">Replay a phrase, then repeat it</span></span><kbd>Shift</kbd></button>
+      <button class="mode" data-mode="karaoke" role="radio" aria-checked="false"><span class="radio"></span><span class="mode-text"><span class="mode-name">Karaoke</span><span class="mode-desc">Romaji on top, no pausing</span></span></button>
     </div>
   </section>
 

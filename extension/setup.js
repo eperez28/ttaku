@@ -113,7 +113,7 @@ $('key-test').onclick = async () => {
 };
 $('japanese-toggle').onclick = async () => { const v = $('japanese-toggle').getAttribute('aria-checked') !== 'true'; await chrome.storage.local.set({ showJapanese: v }); $('japanese-toggle').setAttribute('aria-checked', String(v)); };
 function renderModes() {
-  for (const b of document.querySelectorAll('#modes button')) { b.setAttribute('aria-pressed', String(b.dataset.mode === practiceMode)); b.disabled = !!running || starting; }
+  for (const b of document.querySelectorAll('#modes button')) { b.setAttribute('aria-checked', String(b.dataset.mode === practiceMode)); b.disabled = !!running || starting; }
 }
 for (const b of document.querySelectorAll('#modes button')) b.onclick = async () => { practiceMode = b.dataset.mode; await chrome.storage.local.set({ mode: practiceMode }); renderModes(); };
 function showView(view) {
