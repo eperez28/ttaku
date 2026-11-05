@@ -50,8 +50,8 @@ export function cumulativeTranscript(message) {
   if (!message || message.type !== 'transcript' || typeof message.transcript !== 'string') return null;
   return { text: message.transcript, final: message.final === true };
 }
-export function transcribeRequest() {
-  return { mode: 'PUSH_TO_TALK', model: ASR_MODEL, audioEncoding: 'WAV', languageBias: ['Japanese'] };
+export function transcribeRequest(mode = 'PUSH_TO_TALK') {
+  return { mode, model: ASR_MODEL, audioEncoding: 'WAV', languageBias: ['Japanese'] };
 }
 export function responsesBody(instructions, input, schema, name) {
   // reasoning:'none' + a larger budget: Muse Spark can otherwise spend the

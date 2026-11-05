@@ -65,17 +65,28 @@ async function metaFetch(path, init) {
   chrome.storage.local.set({ lastError: '' }).catch(() => {});
   return data;
 }
+async function transcribeOnce(bytes, mode) {
+  const form = new FormData();
+  form.set('request', new Blob([JSON.stringify(transcribeRequest(mode))], { type: 'application/json' }));
+  form.set('audio', new Blob([bytes], { type: 'audio/wav' }), 'clip.wav');
+  const data = await metaFetch('/asr/transcribe', { method: 'POST', headers: { Accept: 'application/json' }, body: form });
+  return extractTranscript(data);
+}
 async function transcribe(audioBase64) {
   if (typeof audioBase64 !== 'string' || audioBase64.length > 6000000) throw Error('That clip is too long. Try a shorter line.');
   const bytes = base64ToBytes(audioBase64);
   if (bytes.length < 48 || String.fromCharCode(...bytes.subarray(0, 4)) !== 'RIFF') throw Error('A WAV audio clip is required.');
-  const form = new FormData();
-  form.set('request', new Blob([JSON.stringify(transcribeRequest())], { type: 'application/json' }));
-  form.set('audio', new Blob([bytes], { type: 'audio/wav' }), 'clip.wav');
   if (isSilentClip(bytes)) return '';
   // NOTE: no expected answer is ever included in an ASR request.
-  const data = await metaFetch('/asr/transcribe', { method: 'POST', headers: { Accept: 'application/json' }, body: form });
-  return extractTranscript(data);
+  let text = await transcribeOnce(bytes, 'PUSH_TO_TALK');
+  if (!text) {
+    // Our windows are cut by silence, not by sentence: they can hold a
+    // partial line, music, or two speakers. Like the original Taku's
+    // whole-clip transcription, ENDPOINTING lets Meta find the turns inside.
+    try { text = await transcribeOnce(bytes, 'ENDPOINTING'); } catch {}
+  }
+  chrome.storage.local.set({ metaDiag: 'heard: ' + (text || '(nothing)').slice(0, 80) }).catch(() => {});
+  return text;
 }
 async function structured(instructions, input, schema, name) {
   const data = await metaFetch('/responses', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(responsesBody(instructions, input, schema, name)) });
