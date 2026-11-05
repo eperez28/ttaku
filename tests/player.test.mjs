@@ -14,3 +14,5 @@ test('replay pauses at the original end and returns to learner listening',()=>{c
 test('only recognized words fill; a new line starts hollow',()=>{
  const h=harness();h.send({type:'start'});const phrase={romaji:'daijoubu desu ka',japanese:'大丈夫ですか',meaning:'Are you okay?',tokens:[{romaji:'daijoubu'},{romaji:'desu'},{romaji:'ka'}],words:[]};h.send({type:'phrase',phrase});const line=h.elements.get('romaji');assert.equal(line.children.filter(w=>w.classList.contains('done')).length,0);h.send({type:'word-progress',count:2});assert.deepEqual(line.children.map(w=>w.classList.contains('done')),[true,true,false]);h.send({type:'phrase',phrase});assert.equal(line.children.filter(w=>w.classList.contains('done')).length,0);
 });
+
+test('unconfirmed audio never pauses: empty/error while watching keeps playing',()=>{const h=harness();h.send({type:'start'});h.video.paused=false;h.send({type:'state',phase:'empty',message:'x'});h.tick();assert.equal(h.video.paused,false);h.send({type:'state',phase:'error',message:'x'});h.tick();assert.equal(h.video.paused,false)});

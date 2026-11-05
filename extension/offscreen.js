@@ -55,16 +55,18 @@ function listen(phaseName = 'listening') { phase = 'listening'; micSegments.rese
 function showLine() { phrase = lines[lineIndex]; emit({ type: 'phrase', phrase, lineIndex, lineCount: lines.length }); listen(); }
 function advance() { closeLive(); if (lineIndex + 1 < lines.length) { epoch++; lineIndex++; showLine(); } else resume(); }
 async function analyze(segment) {
-  const ticket = ++epoch; phase = 'processing'; emit({ type: 'pause', duration: segment.duration }); emit({ type: 'state', phase, message: 'Getting this line…' });
+  const ticket = ++epoch; phase = 'processing'; const startedAt = performance.now();
+  // Do NOT pause yet: any tab audio (music, effects, other languages) makes a
+  // segment. The video only pauses below, after Meta transcribes the clip and
+  // the phrase pipeline confirms it is a usable Japanese line.
   try {
     const result = await meta({ type: 'phrase', audioBase64: wav24Base64(segment.chunks, context.sampleRate) });
     if (result?.error) throw Error(result.error);
     if (ticket !== epoch) return;
-    if (result.empty) { phase = 'empty'; emit({ type: 'state', phase, message: 'I couldn’t make out that line.' }); return; }
-    lines = compactLines(result.lines?.length ? result.lines : [result]).filter(l => l.romaji && l.reading);
-    if (!lines.length) { phase = 'empty'; emit({ type: 'state', phase, message: 'I couldn’t make out that line.' }); return; }
-    lineIndex = 0; showLine();
-  } catch (error) { if (ticket === epoch) { phase = 'error'; emit({ type: 'state', phase, message: error.message }); } }
+    lines = result.empty ? [] : compactLines(result.lines?.length ? result.lines : [result]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || ''));
+    if (!lines.length) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'state', phase: 'empty', message: '' }); return; }
+    lineIndex = 0; emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); showLine();
+  } catch (error) { if (ticket === epoch) { phase = 'watching'; tabSegments.reset(); armedAt = performance.now() + 180; emit({ type: 'state', phase: 'error', message: error.message }); } }
 }
 async function check(segment) {
   const ticket = ++epoch; phase = 'checking'; closeLive(true); emit({ type: 'state', phase, message: '' });

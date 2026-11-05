@@ -66,6 +66,9 @@
  }
  function progress(count){wordEls.forEach((word,i)=>word.classList.toggle('done',i<count))}
  function state(next,message=''){
+  // A clip that was not confirmed as a Japanese line (or failed before any
+  // line was shown) must never hold the video paused.
+  if((next==='empty'||next==='error')&&phase==='watching'&&!phrase)next='watching';
   phase=next;mount();$('card').hidden=['watching','off'].includes(next);$('card').dataset.phase=next;
   $('feedback').textContent=['error','empty','retry'].includes(next)?message:'';
   if($('feedback').textContent)$('details').hidden=true;
@@ -98,7 +101,7 @@
    video.play().catch(error=>{if(active&&phase==='watching'&&error.name!=='AbortError')state('error','Press Play to begin.')});reply({ok:true});return;
   }
   if(m.type==='stop'){cleanup();reply({ok:true});return}if(!active)return;
-  if(m.type==='pause'){phase='processing';video.pause();segmentEnd=video.currentTime;segmentStart=Math.max(0,segmentEnd-m.duration);phraseURL=location.href;reply({ok:true});return}
+  if(m.type==='pause'){phase='processing';video.pause();segmentEnd=Math.max(0,video.currentTime-(m.delaySeconds||0));segmentStart=Math.max(0,segmentEnd-m.duration);phraseURL=location.href;reply({ok:true});return}
   if(m.type==='state'){state(m.phase,m.message);return}
   if(m.type==='phrase'){
    phrase=m.phrase;mount();showWords();$('meaning').textContent=phrase.meaning;$('japanese').textContent=phrase.japanese;$('words').replaceChildren();$('details').hidden=true;
