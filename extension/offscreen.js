@@ -69,7 +69,7 @@ function finalizeSourceLive() {
   try { if (sourceLive.readyState === WebSocket.OPEN) sourceLive.send(JSON.stringify({ type: 'endStream' })); } catch {}
   return new Promise(resolve => {
     sourceWaiter = resolve;
-    setTimeout(() => { if (sourceWaiter === resolve) finishSource(sourceText); }, 2800);
+    setTimeout(() => { if (sourceWaiter === resolve) finishSource(sourceText); }, 700);
   });
 }
 function closeSourceLive() { sourceLive = null; sourceReady = false; sourceQueue = []; sourceWaiter = null; }
@@ -185,13 +185,16 @@ async function analyze(segment, prePaused = false, liveTextPromise = null) {
     saveDiag('Japanese line confirmed, pausing');
     if (!prePaused) emit({ type: 'pause', duration: segment.duration, delaySeconds: (performance.now() - startedAt) / 1000 });
     emit({ type: 'state', phase: 'processing', message: 'Getting this line…' });
-    // A clip that may hold more than one speaker gets diarized first, and
-    // each speaker's turn becomes its own practice line — never a blend.
+    // A clip that may hold more than one speaker gets diarized, and each
+    // speaker's turn becomes its own practice line — never a blend. But
+    // diarization races the clock: it may inform the display, never block it.
     const jpChars = (text.match(/[\u3040-\u30ff\u3400-\u9fff]/g) || []).length;
     const multiClue = segment.duration > 4 || jpChars > 24 || (text.match(/[。！？]/g) || []).length >= 2;
     if (multiClue) {
       let turns = null;
-      try { const d = await meta({ type: 'diarize', audioBase64: wav24Base64(segment.chunks, context.sampleRate) }); if (d && !d.error && Array.isArray(d.turns)) turns = d.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text)); } catch {}
+      const diarPromise = meta({ type: 'diarize', audioBase64: wav24Base64(segment.chunks, context.sampleRate) }).catch(() => null);
+      const raced = await Promise.race([diarPromise, new Promise(r => setTimeout(() => r('late'), 800))]);
+      if (raced && raced !== 'late' && !raced.error && Array.isArray(raced.turns)) turns = raced.turns.filter(tn => tn.text && /[\u3040-\u30ff\u3400-\u9fff]/.test(tn.text));
       if (ticket !== epoch) return;
       if (turns && turns.length >= 2) {
         lines = turns.slice(0, 1).map(tn => ({ pendingTurn: tn.text, speaker: tn.speaker || '', japanese: '', reading: '', romaji: '', tokens: [], words: [], meaning: '' }));
@@ -274,6 +277,7 @@ async function start(m) {
 }
 chrome.runtime.onMessage.addListener((m, sender, reply) => {
   if (m.target === 'display' && sender.id === chrome.runtime.id) {
+    if (m.type === 'romaji-preview' && activeDisplay && m.streamId === activeDisplay.id && !activeDisplay.shown && m.romaji) { emit({ type: 'romaji-preview', romaji: m.romaji }); return; }
     if (m.type === 'display-line' && activeDisplay && m.streamId === activeDisplay.id && m.line) {
       const line = punctuateLine(expandContractions(normalizeFiller(m.line)));
       const last = activeDisplay.lines[activeDisplay.lines.length - 1];

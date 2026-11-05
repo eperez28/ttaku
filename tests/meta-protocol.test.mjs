@@ -1,5 +1,5 @@
 import {test} from 'node:test';import assert from 'node:assert/strict';
-import {buildHandshake,isHandshakeAck,cumulativeTranscript,transcribeRequest,responsesBody,extractResponsesText,extractDisplayLines,responseProblem,parseEventStream,isSilentClip,wavInfo,sanitizeServerMessage,validatePhraseOutput,validateFastPhraseOutput,validateEnrichOutput,validateReadingOutput,mapMetaError,extractTranscript,parseTurns,META_WS} from '../extension/meta-protocol.js';
+import {buildHandshake,isHandshakeAck,cumulativeTranscript,transcribeRequest,responsesBody,extractResponsesText,extractDisplayLines,extractPartialRomaji,responseProblem,parseEventStream,isSilentClip,wavInfo,sanitizeServerMessage,validatePhraseOutput,validateFastPhraseOutput,validateEnrichOutput,validateReadingOutput,mapMetaError,extractTranscript,parseTurns,META_WS} from '../extension/meta-protocol.js';
 const READING_SCHEMA_SHAPE={type:'object',properties:{reading:{type:'string'}},required:['reading'],additionalProperties:false};
 import {wav24Base64,pcm24Bytes} from '../extension/audio-utils.js';
 import {recognizedPrefix} from '../extension/word-progress.js';
@@ -28,3 +28,5 @@ test('enrichment output is validated',()=>{assert.equal(validateEnrichOutput({me
 test('streamed answers yield lines as soon as each romaji closes',()=>{const partial='{"lines":[{"japanese":"行くぞ","romaji":"iku zo"},{"japanese":"大丈';const found=extractDisplayLines(partial);assert.equal(found.length,1);assert.equal(found[0].romaji,'iku zo');assert.equal(extractDisplayLines('{"lines":[]}').length,0)});
 
 test('diarization turns become per-speaker practice turns',()=>{assert.deepEqual(parseTurns({turns:[{speaker:'A',transcript:' 行くぞ '},{speaker:'B',transcript:'おう'},{speaker:'A',transcript:' '}]}),[{speaker:'A',text:'行くぞ'},{speaker:'B',text:'おう'}]);assert.deepEqual(parseTurns({}),[])});
+
+test('finished words surface from a half-generated romaji stream',()=>{assert.equal(extractPartialRomaji('{"lines":[{"japanese":"行くぞ","romaji":"iku zo ka'),'iku zo'.slice(0,6));assert.equal(extractPartialRomaji('{"lines":[{"japanese":"行くぞ","romaji":"iku zo"'),'')});

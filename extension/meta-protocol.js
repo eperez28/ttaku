@@ -204,6 +204,22 @@ export function parseTurns(data) {
     .map(tn => ({ speaker: typeof tn?.speaker === 'string' ? tn.speaker : '', text: typeof tn?.transcript === 'string' ? tn.transcript.trim() : '' }))
     .filter(tn => tn.text);
 }
+// Words that are fully generated inside a still-streaming romaji string,
+// so they can be shown before the line (let alone the JSON) is complete.
+export function extractPartialRomaji(partial = '') {
+  const text = String(partial);
+  const idx = text.lastIndexOf('"romaji"');
+  if (idx < 0) return '';
+  const rest = text.slice(idx);
+  const m = rest.match(/"romaji"\s*:\s*"((?:\\.|[^"\\])*)/);
+  if (!m) return '';
+  if (rest[m[0].length] === '"') return ''; // closed: the full-line path owns it
+  let value = '';
+  try { value = JSON.parse('"' + m[1] + '"'); } catch { return ''; }
+  const words = value.split(/\s+/).filter(Boolean);
+  if (words.length < 2) return '';
+  return words.slice(0, -1).join(' ');
+}
 export function extractTranscript(data) {
   if (typeof data?.transcript === 'string') return data.transcript.trim();
   if (Array.isArray(data?.turns)) return data.turns.map(t => t.transcript || '').join(' ').trim();

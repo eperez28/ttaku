@@ -3,7 +3,7 @@
 // pages cannot read it), is read here on demand, and is never sent to
 // content scripts, pages, or logs. It persists across Chrome restarts and
 // extension reloads until the user clears it in the popup.
-import { META_BASE, TEXT_MODEL, ASR_MODEL, PHRASE_SCHEMA, PHRASE_FAST_SCHEMA, PHRASE_FAST_INSTRUCTIONS, PHRASE_DISPLAY_SCHEMA, PHRASE_DISPLAY_INSTRUCTIONS, extractDisplayLines, ENRICH_SCHEMA, validateFastPhraseOutput, validateEnrichOutput, READING_SCHEMA, PHRASE_INSTRUCTIONS, READING_INSTRUCTIONS, responsesBody, extractResponsesText, responseProblem, responseShape, parseEventStream, isSilentClip, sanitizeServerMessage, extractTranscript, parseTurns, transcribeRequest, validatePhraseOutput, validateReadingOutput, mapMetaError } from './meta-protocol.js';
+import { META_BASE, TEXT_MODEL, ASR_MODEL, PHRASE_SCHEMA, PHRASE_FAST_SCHEMA, PHRASE_FAST_INSTRUCTIONS, PHRASE_DISPLAY_SCHEMA, PHRASE_DISPLAY_INSTRUCTIONS, extractDisplayLines, extractPartialRomaji, ENRICH_SCHEMA, validateFastPhraseOutput, validateEnrichOutput, READING_SCHEMA, PHRASE_INSTRUCTIONS, READING_INSTRUCTIONS, responsesBody, extractResponsesText, responseProblem, responseShape, parseEventStream, isSilentClip, sanitizeServerMessage, extractTranscript, parseTurns, transcribeRequest, validatePhraseOutput, validateReadingOutput, mapMetaError } from './meta-protocol.js';
 import { base64ToBytes } from './audio-utils.js';
 import { displayTokens } from './word-progress.js';
 
@@ -147,7 +147,7 @@ async function phraseDisplayStream(text, streamId) {
   if (!response.ok) { const message = mapMetaError(response.status); chrome.storage.local.set({ lastError: message }).catch(() => {}); throw Error(message); }
   if (!response.body) { const data = await response.json().catch(() => null); return { lines: mapDisplayLines(data) }; }
   const reader = response.body.getReader(); const decoder = new TextDecoder();
-  let buffer = '', acc = '', sent = 0; const lines = [];
+  let buffer = '', acc = '', sent = 0, previewWords = 0; const lines = [];
   for (;;) {
     const { done, value } = await reader.read();
     if (done) break;
@@ -162,6 +162,9 @@ async function phraseDisplayStream(text, streamId) {
       if (event?.type === 'response.output_text.done' && typeof event.text === 'string' && !acc) delta = event.text;
       if (!delta) continue;
       acc += delta;
+      const preview = extractPartialRomaji(acc);
+      const previewCount = preview ? preview.split(/\s+/).length : 0;
+      if (previewCount > previewWords) { previewWords = previewCount; chrome.runtime.sendMessage({ target: 'display', type: 'romaji-preview', streamId, romaji: preview }).catch(() => {}); }
       const found = extractDisplayLines(acc);
       while (sent < found.length) {
         const line = mapDisplayLines({ lines: [found[sent]] })[0]; sent++;

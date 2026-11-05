@@ -168,6 +168,7 @@
    renderWords();return;
   }
   if(m.type==='phrase-details'){if(phrase){phrase.meaning=m.meaning;phrase.words=m.words||[];$('meaning').textContent=phrase.meaning;$('details').hidden=false;renderWords()}return}
+  if(m.type==='romaji-preview'){if(!phrase||!phrase.japanese){cardAnchor='top';mount();$('card').hidden=false;phrase={romaji:m.romaji,japanese:'',reading:'',meaning:'',tokens:String(m.romaji).split(/\s+/).filter(Boolean).map(w=>({romaji:w})),words:[]};showWords()}return}
   if(m.type==='struggle-help'){showHelp();return}
   if(m.type==='phrase-update'){if(phrase){const done=wordEls.filter(el=>el.classList.contains('done')).length;phrase=m.phrase;showWords();progress(done);if(phrase.meaning)$('meaning').textContent=phrase.meaning}return}
   if(m.type==='phrase-tokens'){if(phrase&&m.tokens?.length){const done=wordEls.filter(el=>el.classList.contains('done')).length;phrase.tokens=m.tokens;showWords();progress(done)}return}
