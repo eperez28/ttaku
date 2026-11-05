@@ -19,18 +19,16 @@ function currentStep() {
 }
 function updateStart() {
   const button = $('start');
-  $('session-status').hidden = !running;
   button.classList.toggle('stop', !!running);
-  if (starting) { button.disabled = true; button.textContent = 'Starting…'; $('start-hint').textContent = ''; return; }
-  const step = currentStep();
+  if (starting) { button.disabled = true; button.textContent = 'Starting…'; return; }
   const config = {
-    running: ['Stop practice', false, 'Ttaku is listening. Each Japanese line will pause for you.'],
-    key: ['Add your API key', false, 'One-time setup — it stays saved in Settings.'],
-    mic: ['Allow microphone', false, 'Ttaku needs to hear you repeat each line.'],
-    episode: ['Start practice', true, 'Open a Crunchyroll episode first.'],
-    ready: ['Start practice', false, 'We’ll pause for each Japanese line and play again when you repeat it.']
-  }[step];
-  button.textContent = config[0]; button.disabled = config[1]; $('start-hint').textContent = config[2];
+    running: ['Stop practice', false],
+    key: ['Add API key', false],
+    mic: ['Allow microphone', false],
+    episode: ['Open an episode', true],
+    ready: ['Start practice', false]
+  }[currentStep()];
+  button.textContent = config[0]; button.disabled = config[1];
 }
 function showError(message) { const text = message ? friendlyError(message) : ''; $('error').textContent = text; $('error').hidden = !text; }
 function keyStatus(message) { $('key-status').textContent = message; }
@@ -58,9 +56,9 @@ async function load() {
   showError(stored.lastError || '');
   if (stored.lastError) chrome.storage.local.set({ lastError: '' }).catch(() => {});
 
-  $('spoken').replaceChildren(...(spoken.length ? spoken.slice(0, 50).map(w => wordRow(w, w.count)) : [emptyNote('Words from lines you finish will collect here on their own.')]));
+  $('spoken').replaceChildren(...(spoken.length ? spoken.slice(0, 50).map(w => wordRow(w, w.count)) : [emptyNote('Nothing yet.')]));
   $('words').replaceChildren();
-  if (!bank.length) $('words').append(emptyNote('While practicing, tap a word under the line to save it here.'));
+  if (!bank.length) $('words').append(emptyNote('Nothing yet.'));
   for (const word of bank) {
     const row = wordRow(word);
     if (word.context?.url?.startsWith('https://www.crunchyroll.com/')) { const a = document.createElement('a'); a.textContent = '↗'; a.title = 'Open the episode'; a.href = word.context.url; a.target = '_blank'; row.append(a); }
@@ -68,13 +66,11 @@ async function load() {
   }
   $('export').hidden = !bank.length && !spoken.length;
   $('progress').textContent = String(progress.phrases || 0);
-  $('home-progress').textContent = progress.phrases ? 'You’ve practiced ' + progress.phrases + (progress.phrases === 1 ? ' line' : ' lines') + ' so far.' : '';
 
   const status = await chrome.runtime.sendMessage({ target: 'worker', type: 'status' }); running = status?.session || null;
   const keyState = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-status' }); hasKey = !!keyState?.hasKey;
-  keyStatus(hasKey ? 'A key is saved. Paste a new one and Save to replace it.' : 'No key saved yet.');
+  keyStatus(hasKey ? 'Saved.' : 'Not saved.');
   [currentTab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
-  $('episode-title').textContent = running ? (currentTab?.title || 'Your episode').replace(/ - Watch on Crunchyroll$/, '') : isPlayerUrl(currentTab?.url) ? (currentTab.title || 'Your episode').replace(/ - Watch on Crunchyroll$/, '') : 'Open a Crunchyroll episode';
   updateStart();
 }
 
@@ -98,20 +94,20 @@ $('start').onclick = async () => {
 $('mic').onclick = () => chrome.runtime.sendMessage({ target: 'worker', type: 'permission' });
 $('key-save').onclick = async () => {
   const value = $('meta-key').value; $('meta-key').value = '';
-  if (!value.trim()) { keyStatus('Paste your key, then choose Save.'); return; }
+  if (!value.trim()) { keyStatus('Paste your key first.'); return; }
   const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-save', key: value });
   if (r?.error) { keyStatus(r.error); return; }
-  hasKey = true; keyStatus('Saved. You can close Settings and start practicing.'); updateStart();
+  hasKey = true; keyStatus('Saved.'); updateStart();
 };
 $('key-clear').onclick = async () => {
   $('meta-key').value = '';
   await chrome.runtime.sendMessage({ target: 'worker', type: 'key-clear' });
-  hasKey = false; running = null; keyStatus('Key removed.'); updateStart();
+  hasKey = false; running = null; keyStatus('Removed.'); updateStart();
 };
 $('key-test').onclick = async () => {
   keyStatus('Checking…');
   const r = await chrome.runtime.sendMessage({ target: 'worker', type: 'key-test' });
-  keyStatus(r?.error ? friendlyError(r.error) : 'That key works.');
+  keyStatus(r?.error ? friendlyError(r.error) : 'Works.');
 };
 $('japanese-toggle').onclick = async () => { const v = $('japanese-toggle').getAttribute('aria-checked') !== 'true'; await chrome.storage.local.set({ showJapanese: v }); $('japanese-toggle').setAttribute('aria-checked', String(v)); };
 function showView(view) {
