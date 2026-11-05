@@ -1,7 +1,7 @@
 (()=>{
  const VERSION=chrome.runtime.getManifest().version;if(globalThis.__takuVersion===VERSION)return;globalThis.__takuVersion=VERSION;
  const GEN=(globalThis.__takuGen=(globalThis.__takuGen||0)+1);
- let active=false,video=null,host=null,shadow=null,phase='off',cardAnchor='bottom',delayHelp=true,helpTimer=null,helpRevealed=false,phrase=null,segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
+ let active=false,video=null,host=null,shadow=null,phase='off',cardAnchor='bottom',delayHelp=true,helpTimer=null,helpRevealed=false,phrase=null,lastCaptionText='',segmentStart=0,segmentEnd=0,replayEnd=0,guard=null,previousRate=1,phraseURL='',cueKey='',captionNode=null,observer=null,wordEls=[],lastFont='',noticeTimer=null,lastNotice='',lastNoticeAt=0;
  const $=id=>shadow?.getElementById(id);
  const send=event=>chrome.runtime.sendMessage({target:'worker',type:'player-event',event}).catch(()=>{});
  const pauseAll=()=>{for(const v of document.querySelectorAll('video')){if(!v.paused)v.pause()}};
@@ -144,16 +144,18 @@
  function wireTracks(){
   for(const track of video.textTracks||[]){
    if(track.__takuWired)continue;track.__takuWired=true;
-   track.addEventListener?.('cuechange',()=>{if(active&&phase==='watching')send({type:'caption-boundary'})});
+   track.addEventListener?.('cuechange',()=>{if(active&&phase==='watching')send({type:'caption-boundary',caption:lastCaptionText})});
   }
  }
  function checkCue(){
   if(!active||phase!=='watching')return;
   wireTracks();
-  let key='';
-  for(const track of video.textTracks||[]){if(track.activeCues?.length){const cue=track.activeCues[0];key=cue.startTime+':'+cue.endTime+':'+cue.text;break}}
-  if(!key){const node=[...document.querySelectorAll(captionSelector)].find(e=>e.textContent.trim()&&e.getBoundingClientRect().height>0);if(node)key=node.textContent.trim()}
-  if(cueKey&&key!==cueKey)send({type:'caption-boundary'});cueKey=key;
+  let key='',cueText='';
+  for(const track of video.textTracks||[]){if(track.activeCues?.length){const cue=track.activeCues[0];key=cue.startTime+':'+cue.endTime+':'+cue.text;cueText=String(cue.text||'').replace(/<[^>]+>/g,' ').trim();break}}
+  if(!key){const node=[...document.querySelectorAll(captionSelector)].find(e=>e.textContent.trim()&&e.getBoundingClientRect().height>0);if(node){key=node.textContent.trim();cueText=key}}
+  if(cueKey&&key!==cueKey)send({type:'caption-boundary',caption:lastCaptionText});
+  if(cueText)lastCaptionText=cueText;
+  cueKey=key;
  }
  function cleanup(){active=false;clearInterval(guard);observer?.disconnect();observer=null;video?.removeEventListener('pause',onPause);video?.removeEventListener('playing',onPlay);video?.removeEventListener('play',onPlay);if(phase==='replay'&&video){video.pause();video.playbackRate=previousRate}host?.remove();host=shadow=null;phase='off';phrase=null;wordEls=[];cueKey=''}
  chrome.runtime.onMessage.addListener((m,sender,reply)=>{

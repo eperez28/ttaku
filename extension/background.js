@@ -109,20 +109,20 @@ async function phrase(audioBase64) {
   phraseCache.set(text, data); if (phraseCache.size > 300) phraseCache.delete(phraseCache.keys().next().value);
   return data;
 }
-async function phraseFromText(text) {
+async function phraseFromText(text, caption = '') {
   const clean = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
   if (!clean || !/[\u3040-\u30ff\u3400-\u9fff]/.test(clean)) return { empty: true };
   if (phraseCache.has(clean)) return phraseCache.get(clean);
-  const data = validateFastPhraseOutput(await structured(PHRASE_FAST_INSTRUCTIONS, { transcript: clean }, PHRASE_FAST_SCHEMA, 'japanese_lines'));
+  const data = validateFastPhraseOutput(await structured(PHRASE_FAST_INSTRUCTIONS, caption ? { transcript: clean, englishSubtitle: String(caption).slice(0, 300) } : { transcript: clean }, PHRASE_FAST_SCHEMA, 'japanese_lines'));
   phraseCache.set(clean, data); if (phraseCache.size > 300) phraseCache.delete(phraseCache.keys().next().value);
   return data;
 }
 const displayCache = new Map();
-async function phraseDisplayFromText(text) {
+async function phraseDisplayFromText(text, caption = '') {
   const clean = String(text || '').replace(/\s+/g, ' ').trim().slice(0, 300);
   if (!clean || !/[\u3040-\u30ff\u3400-\u9fff]/.test(clean)) return { empty: true };
   if (displayCache.has(clean)) return displayCache.get(clean);
-  const data = await structured(PHRASE_DISPLAY_INSTRUCTIONS, { transcript: clean }, PHRASE_DISPLAY_SCHEMA, 'japanese_lines_display');
+  const data = await structured(PHRASE_DISPLAY_INSTRUCTIONS, caption ? { transcript: clean, englishSubtitle: String(caption).slice(0, 300) } : { transcript: clean }, PHRASE_DISPLAY_SCHEMA, 'japanese_lines_display');
   if (!data || !Array.isArray(data.lines)) throw Error('Meta returned an unusable phrase. Please retry.');
   const result = { lines: mapDisplayLines(data) };
   displayCache.set(clean, result); if (displayCache.size > 300) displayCache.delete(displayCache.keys().next().value);
@@ -197,10 +197,10 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
       if (m.type === 'phrase') return phrase(m.audioBase64);
       if (m.type === 'attempt-reading') return attemptReading(m.audioBase64);
       if (m.type === 'attempt-reading-alt') return attemptReading(m.audioBase64, 'ENDPOINTING');
-      if (m.type === 'phrase-text') return phraseFromText(m.text);
+      if (m.type === 'phrase-text') return phraseFromText(m.text, m.caption);
       if (m.type === 'transcribe') return { text: await transcribe(m.audioBase64) };
       if (m.type === 'phrase-enrich') return enrichLine(m.japanese, m.romaji);
-      if (m.type === 'phrase-display') return phraseDisplayFromText(m.text);
+      if (m.type === 'phrase-display') return phraseDisplayFromText(m.text, m.caption);
       if (m.type === 'diarize') return diarize(m.audioBase64);
       return;
     }

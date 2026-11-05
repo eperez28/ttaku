@@ -10,6 +10,7 @@ let context, tabStream, micStream, sessionId, phase = 'off', phrase = null, line
 let live = null, liveReady = false, liveQueue = [], liveFailed = false, liveEndTimer = null;
 let apiKeyCache = null;
 let helpTimer = null;
+let pendingCaption = '', pendingCaptionAt = 0;
 let sourceLive = null, sourceReady = false, sourceQueue = [], sourceFailed = false;
 function closeSourceLive() { const ws = sourceLive; sourceLive = null; sourceReady = false; sourceQueue = []; if (ws) { try { ws.close(); } catch {} } }
 function openSourceLive() {
@@ -182,7 +183,8 @@ async function analyze(segment, prePaused = false) {
         }
       } catch {}
     }
-    const built = await meta({ type: 'phrase-display', text: blockText });
+    const caption = Date.now() - pendingCaptionAt < 15000 ? pendingCaption : '';
+    const built = await meta({ type: 'phrase-display', text: blockText, caption });
     if (built?.error) throw Error(built.error);
     if (ticket !== epoch) return;
     const rawLines = built.empty ? [] : compactLines(built.lines?.length ? built.lines : [built]).filter(l => l.romaji && l.reading && /[\u3040-\u30ff\u3400-\u9fff]/.test(l.japanese || '')).map(l => punctuateLine(expandContractions(normalizeFiller(l))));
@@ -197,7 +199,7 @@ async function analyze(segment, prePaused = false) {
     // Precise token alignment swaps in behind the block, keeping any fill.
     const shown = phrase;
     if (!shown) return;
-    meta({ type: 'phrase-text', text: blockText }).then(r => {
+    meta({ type: 'phrase-text', text: blockText, caption }).then(r => {
       if (!r || r.error || r.empty || phrase !== shown) return;
       const full = (r.lines?.length ? r.lines : [r]);
       const tokens = full.flatMap(l => l.tokens || []);
@@ -275,6 +277,7 @@ chrome.runtime.onMessage.addListener((m, sender, reply) => {
     if (m.type === 'retry' && phrase) { epoch++; listen('listening'); return { ok: true }; }
     if (m.type === 'replay' && phrase) { epoch++; closeLive(); phase = 'replay'; emit({ type: 'replay' }); return { ok: true }; }
     if (m.type === 'replay-ended') { listen(); return { ok: true }; }
+    if (m.type === 'caption-boundary' && typeof m.caption === 'string' && m.caption) { pendingCaption = m.caption; pendingCaptionAt = Date.now(); }
     if (m.type === 'commit' || m.type === 'caption-boundary') {
       if (phase === 'watching') { const s = tabSegments.finish(); if (s) { diag.clips++; if (m.type === 'caption-boundary') { emit({ type: 'pause', duration: s.duration, delaySeconds: 0 }); emit({ type: 'state', phase: 'processing', message: 'Getting this line…' }); } analyze(s, m.type === 'caption-boundary'); } } else if (phase === 'listening' && m.type === 'commit') { const s = micSegments.finish(); if (s) check(s); } return { ok: true };
     }
