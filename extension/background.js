@@ -3,7 +3,7 @@
 // pages cannot read it), is read here on demand, and is never sent to
 // content scripts, pages, or logs. It persists across Chrome restarts and
 // extension reloads until the user clears it in the popup.
-import { META_BASE, TEXT_MODEL, ASR_MODEL, PHRASE_SCHEMA, READING_SCHEMA, PHRASE_INSTRUCTIONS, READING_INSTRUCTIONS, responsesBody, extractResponsesText, responseProblem, responseShape, parseEventStream, extractTranscript, transcribeRequest, validatePhraseOutput, validateReadingOutput, mapMetaError } from './meta-protocol.js';
+import { META_BASE, TEXT_MODEL, ASR_MODEL, PHRASE_SCHEMA, READING_SCHEMA, PHRASE_INSTRUCTIONS, READING_INSTRUCTIONS, responsesBody, extractResponsesText, responseProblem, responseShape, parseEventStream, isSilentClip, sanitizeServerMessage, extractTranscript, transcribeRequest, validatePhraseOutput, validateReadingOutput, mapMetaError } from './meta-protocol.js';
 import { base64ToBytes } from './audio-utils.js';
 
 let starting = false;
@@ -55,7 +55,13 @@ async function metaFetch(path, init) {
   let data = null;
   const raw = await response.text().catch(() => '');
   try { data = JSON.parse(raw); } catch { data = parseEventStream(raw); }
-  if (!response.ok) { const message = mapMetaError(response.status); chrome.storage.local.set({ lastError: message }).catch(() => {}); throw Error(message); }
+  if (!response.ok) {
+    const serverMessage = sanitizeServerMessage(data?.error?.message || data?.message || '');
+    const code = sanitizeServerMessage(data?.error?.code || data?.error?.type || '');
+    chrome.storage.local.set({ metaDiag: (path + ' ' + response.status + ' ' + code).trim() }).catch(() => {});
+    const message = serverMessage && ![401, 403].includes(response.status) ? serverMessage : mapMetaError(response.status);
+    chrome.storage.local.set({ lastError: message }).catch(() => {}); throw Error(message);
+  }
   chrome.storage.local.set({ lastError: '' }).catch(() => {});
   return data;
 }
@@ -66,8 +72,9 @@ async function transcribe(audioBase64) {
   const form = new FormData();
   form.set('request', new Blob([JSON.stringify(transcribeRequest())], { type: 'application/json' }));
   form.set('audio', new Blob([bytes], { type: 'audio/wav' }), 'clip.wav');
+  if (isSilentClip(bytes)) return '';
   // NOTE: no expected answer is ever included in an ASR request.
-  const data = await metaFetch('/asr/transcribe', { method: 'POST', body: form });
+  const data = await metaFetch('/asr/transcribe', { method: 'POST', headers: { Accept: 'application/json' }, body: form });
   return extractTranscript(data);
 }
 async function structured(instructions, input, schema, name) {

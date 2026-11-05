@@ -136,6 +136,23 @@ export function validateReadingOutput(data) {
   }
   return { reading: data.reading };
 }
+// Inspect a mono PCM16 WAV (as uploaded to Meta) before spending a request.
+export function wavInfo(bytes) {
+  if (!bytes || bytes.length < 48) return null;
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const rate = view.getUint32(24, true);
+  const frames = Math.floor((bytes.length - 44) / 2);
+  let peak = 0, sum = 0;
+  for (let i = 0; i < frames; i++) { const v = Math.abs(view.getInt16(44 + i * 2, true)) / 32768; if (v > peak) peak = v; sum += v * v; }
+  return { rate, duration: rate ? frames / rate : 0, peak, rms: frames ? Math.sqrt(sum / frames) : 0 };
+}
+export function isSilentClip(bytes) {
+  const info = wavInfo(bytes);
+  return !info || info.duration < 0.4 || info.peak < 0.008;
+}
+export function sanitizeServerMessage(message) {
+  return String(message || '').replace(/Bearer\s+\S+/gi, '').replace(/[A-Za-z0-9_\-]{32,}/g, '[redacted]').slice(0, 180).trim();
+}
 export function extractTranscript(data) {
   if (typeof data?.transcript === 'string') return data.transcript.trim();
   if (Array.isArray(data?.turns)) return data.turns.map(t => t.transcript || '').join(' ').trim();
