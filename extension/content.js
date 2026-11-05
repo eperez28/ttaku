@@ -33,17 +33,17 @@
    .glass::before{content:"";position:absolute;inset:-4px -10px;background:#0002;backdrop-filter:blur(7px);mask-image:linear-gradient(90deg,transparent,#000 12%,#000 88%,transparent);border-radius:12px;pointer-events:none}
    .line{position:relative;font:var(--caption-weight) 38px/1.3 var(--caption-font);display:flex;flex-wrap:wrap;justify-content:center;gap:.18em .24em}
    .word{position:relative;display:inline-block;white-space:pre}
-   .outline{color:transparent;-webkit-text-stroke:.038em #f5f5f5;filter:drop-shadow(0 1px 2px #000) drop-shadow(0 0 1px #000)}
+   .outline{color:#fff;-webkit-text-stroke:.115em #000;paint-order:stroke fill;text-shadow:var(--caption-shadow)}
    .fill{position:absolute;inset:0 auto auto -3px;width:0;height:110%;overflow:hidden;transition:width 130ms ease-out;pointer-events:none}
-   .ink{display:block;width:max-content;padding-left:3px;color:#fff;-webkit-text-stroke:.115em #000;paint-order:stroke fill;text-shadow:var(--caption-shadow)}
+   .ink{display:block;width:max-content;padding-left:3px;color:#ffd83d;-webkit-text-stroke:.115em #000;paint-order:stroke fill;text-shadow:var(--caption-shadow)}
    .word.done .fill{width:calc(100% + 8px)}
    .pending{color:#fff;text-shadow:var(--caption-shadow);font-size:.65em}
    .controls,.details,.status{position:absolute;left:50%;transform:translateX(-50%);width:max-content;max-width:min(82vw,420px)}
    .controls{bottom:100%;display:flex;align-items:center;gap:2px;background:#141414e8;backdrop-filter:blur(12px);border-radius:8px;padding:3px;opacity:0;pointer-events:none;transition:opacity .15s}
-   .caption:hover .controls,.caption:focus-within .controls,.caption[data-phase=error] .controls,.caption[data-phase=empty] .controls{opacity:1;pointer-events:auto}
-   .controls button,.end button{display:grid;place-items:center;width:34px;height:32px;background:none;border:0;border-radius:5px}
+   .caption:hover .controls,.caption:focus-within .controls,.caption[data-phase=error] .controls,.caption[data-phase=empty] .controls,.caption[data-phase=listening] .controls,.caption[data-phase=retry] .controls,.caption[data-phase=checking] .controls{opacity:1;pointer-events:auto}
+   .controls button,.end button{display:grid;place-items:center;min-width:34px;height:32px;background:none;border:0;border-radius:5px}
    .controls button:hover,.words button:hover{background:#ffffff20}
-   .controls button.text{width:auto;padding:0 8px;font-size:11px}
+   .controls button.text{width:auto;padding:0 10px;font-size:12px;font-weight:600;white-space:nowrap}
    .details,.status{bottom:calc(100% + 43px);padding:9px 13px;border-radius:8px;background:#141414e8;backdrop-filter:blur(12px);font:13px/1.5 -apple-system,BlinkMacSystemFont,sans-serif;color:#fff}
    .status:empty,.caption:has(.details:not([hidden])) .status{display:none}
    .words{display:flex;flex-wrap:wrap;gap:5px;justify-content:center;margin-top:7px}
@@ -53,7 +53,7 @@
    .end:hover,.end:focus-within{opacity:1}
    .end button{background:#141414e8}
    @media(prefers-reduced-motion:reduce){.fill,.controls{transition:none}}
-   </style><div class="end"><button id="stop" aria-label="Stop Taku" title="Stop Taku"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><section class="caption" id="card" hidden role="region" aria-label="Repeat the Japanese line"><div class="controls"><button id="replay" aria-label="Replay line" title="Replay line"><svg viewBox="0 0 24 24"><path d="M3 10a9 9 0 1 1 2 8M3 4v6h6"/></svg></button><button id="slow" class="text" title="Replay at 0.75 speed">0.75×</button><button id="retry" aria-label="Try again" title="Try again"><svg viewBox="0 0 24 24"><path d="M12 3v12m-5-5 5 5 5-5M5 18h14"/></svg></button><button id="commit" aria-label="Done speaking" title="Done speaking"><svg viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></svg></button><button id="details-toggle" aria-label="Meaning and saved words" title="Meaning and saved words"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7h.01"/></svg></button><button id="skip" aria-label="Skip line" title="Skip line"><svg viewBox="0 0 24 24"><path d="m5 5 10 7-10 7zM19 5v14"/></svg></button></div><div class="glass"><div class="line" id="romaji"></div></div><div class="status" id="feedback" role="status" aria-live="polite"></div><div class="details" id="details" hidden><div class="translation" id="meaning"></div><div class="japanese" id="japanese" hidden></div><div class="words" id="words"></div></div></section>`;
+   </style><div class="end"><button id="stop" aria-label="Stop Taku" title="Stop Taku"><svg viewBox="0 0 24 24"><path d="m6 6 12 12M6 18 18 6"/></svg></button></div><section class="caption" id="card" hidden role="region" aria-label="Repeat the Japanese line"><div class="controls"><button id="replay" class="text" aria-label="Replay line" title="Replay line">Replay</button><button id="slow" class="text" aria-label="Replay slower" title="Replay at 0.75 speed">0.75×</button><button id="retry" class="text" aria-label="Try again" title="Try again">Try again</button><button id="commit" class="text" aria-label="Done speaking" title="Done speaking">Done</button><button id="details-toggle" class="text" aria-label="Meaning and words" title="Meaning and words">Meaning</button><button id="skip" class="text" aria-label="Skip line" title="Skip line">Skip</button></div><div class="glass"><div class="line" id="romaji"></div></div><div class="status" id="feedback" role="status" aria-live="polite"></div><div class="details" id="details" hidden><div class="translation" id="meaning"></div><div class="japanese" id="japanese" hidden></div><div class="words" id="words"></div></div></section>`;
    $('details-toggle').onclick=()=>{$('details').hidden=!$('details').hidden};
    $('stop').onclick=()=>chrome.runtime.sendMessage({target:'worker',type:'stop'});
    $('skip').onclick=()=>send({type:'skip'});$('retry').onclick=()=>send({type:'retry'});$('commit').onclick=()=>send({type:'commit'});
